@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -11,8 +11,9 @@ vi.mock('../validate-projects.js', async () => {
   return { ...actual, validateProjectAt: validationMock.validateProjectAt };
 });
 
-import { createProject, deriveSlug, renameNoReplace } from '../create-project.js';
+import { createProject, deriveSlug, renameNoReplace, runInteractiveCreator } from '../create-project.js';
 import { validateProjects } from '../validate-projects.js';
+import { copyRenderedTemplate } from '../lib/templates.js';
 import { cleanupRepositories, makeRepository } from './fixtures.js';
 
 afterEach(async () => {
@@ -118,6 +119,33 @@ it('rejects a symlink used as the selected template directory', async () => {
   await expect(readdir(join(root, 'projects'))).resolves.toEqual([]);
 });
 
+it('refuses a template file swapped to a symlink before descriptor open', async () => {
+  const root = await makeRepository();
+  const templateRoot = join(root, 'templates');
+  const source = join(templateRoot, 'blank/README.md.tpl');
+  await mkdir(join(templateRoot, 'blank'), { recursive: true });
+  await writeFile(source, '# {{TITLE}}');
+  await expect(copyRenderedTemplate({
+    templateRoot,
+    template: 'blank',
+    destination: join(root, 'destination'),
+    values: { TITLE: 'Safe' },
+    beforeOpenFile: async (path) => {
+      await rm(path);
+      await symlink('/etc/passwd', path);
+    },
+  })).rejects.toThrow();
+});
+
+it('rejects a template root writable by untrusted users', async () => {
+  const root = await makeRepository();
+  const templateRoot = join(root, 'templates');
+  await mkdir(join(templateRoot, 'blank'), { recursive: true });
+  await writeFile(join(templateRoot, 'blank/README.md.tpl'), '# {{TITLE}}');
+  await chmod(templateRoot, 0o777);
+  await expect(createProject({ ...input(root), templateRoot })).rejects.toThrow(/writable by group or other/i);
+});
+
 it('escapes titles for generated JavaScript and HTML contexts', async () => {
   const title = `Bob's </title><script>alert(1)</script>\nidea`;
   for (const template of ['web', 'script'] as const) {
@@ -160,7 +188,7 @@ it('allows only one concurrent creator to publish and never replaces the winner'
   expect((await readdir(join(root, 'projects'))).filter((name) => name.includes('.stage-') || name.includes('.lock'))).toEqual([]);
 });
 
-it('rejects a destination created after locking and preserves its contents', async () => {
+it('atomically rejects a destination created immediately before publication and preserves it', async () => {
   const root = await makeRepository();
   const staging = join(root, 'projects/.my-idea.stage-test');
   const final = join(root, 'projects/my-idea');
@@ -168,7 +196,7 @@ it('rejects a destination created after locking and preserves its contents', asy
   await writeFile(join(staging, 'winner'), 'staged');
 
   await expect(renameNoReplace(staging, final, {
-    afterLock: async () => {
+    beforeRename: async () => {
       await mkdir(final);
       await writeFile(join(final, 'sentinel'), 'do not replace');
     },
@@ -177,23 +205,49 @@ it('rejects a destination created after locking and preserves its contents', asy
   expect((await readdir(join(root, 'projects'))).filter((name) => name.includes('.lock'))).toEqual([]);
 });
 
-it('holds the exclusive slug lock across full creators so a second creator cannot replace the winner', async () => {
+it('ignores legacy stale creator locks because publication no longer relies on locks', async () => {
+  const root = await makeRepository();
+  await writeFile(join(root, 'projects/.create-my-idea.lock'), 'stale owner');
+  await expect(createProject(input(root))).resolves.toMatchObject({ metadata: { slug: 'my-idea' } });
+});
+
+it('allows exactly one full creator to win atomic publication without replacement', async () => {
   const root = await makeRepository();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   let locked!: () => void;
   const hasLocked = new Promise<void>((resolve) => { locked = resolve; });
-  const winner = createProject(
-    { ...input(root), summary: 'first winner' },
-    { afterPublicationLock: async () => { locked(); await gate; } },
+  const delayed = createProject(
+    { ...input(root), summary: 'delayed loser' },
+    { beforeAtomicPublication: async () => { locked(); await gate; } },
   );
   await hasLocked;
-  await expect(createProject({ ...input(root), summary: 'second loser' })).rejects.toThrow(/being created/i);
+  await createProject({ ...input(root), summary: 'atomic winner' });
   release();
-  await winner;
+  await expect(delayed).rejects.toThrow(/already exists/i);
 
   const final = join(root, 'projects/my-idea');
   const metadata = JSON.parse(await readFile(join(final, 'project.json'), 'utf8'));
-  expect(metadata.summary).toBe('first winner');
+  expect(metadata.summary).toBe('atomic winner');
   expect((await readdir(join(root, 'projects'))).filter((name) => name.includes('.stage-') || name.includes('.lock'))).toEqual([]);
+});
+
+it.each([
+  ['blank', 'Next: cd projects/my-idea and document your development setup.'],
+  ['web', 'Next: cd projects/my-idea and open index.html in a browser.'],
+  ['script', 'Next: cd projects/my-idea && node src/index.mjs'],
+] as const)('prints the %s template next step through the injected writer', async (template, expected) => {
+  const root = await makeRepository();
+  const lines: string[] = [];
+  await runInteractiveCreator(root, {
+    promptTitle: async () => 'My Idea',
+    promptType: async () => 'other',
+    promptTemplate: async () => template,
+    promptSummary: async () => 'Try it.',
+    confirmSlug: async () => true,
+    promptSlug: async () => { throw new Error('unexpected slug prompt'); },
+    write: (line) => lines.push(line),
+    writeError: (line) => lines.push(`ERROR: ${line}`),
+  });
+  expect(lines).toEqual(['Created projects/my-idea', expected]);
 });

@@ -1,11 +1,12 @@
 import { confirm, input, select } from '@inquirer/prompts';
-import { lstat, mkdir, mkdtemp, open, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ProjectMetadataSchema, type ProjectMetadata } from './project-schema.js';
 import { validateProjectAt } from './validate-projects.js';
 import { copyRenderedTemplate, type TemplateName } from './lib/templates.js';
+import { atomicRenameNoReplace } from './lib/rename-noreplace.js';
 
 export type CreateProjectInput = {
   root: string;
@@ -15,12 +16,24 @@ export type CreateProjectInput = {
   summary: string;
   template: TemplateName;
   today?: string;
+  /** Canonical, owner-controlled template tree that remains immutable during this call. */
   templateRoot?: string;
 };
 
 export type CreateProjectDependencies = {
-  /** Test/observability seam invoked while this creator exclusively owns the slug lock. */
-  afterPublicationLock?: () => Promise<void>;
+  /** Test/observability seam invoked immediately before the atomic publication syscall. */
+  beforeAtomicPublication?: () => Promise<void>;
+};
+
+export type InteractiveCreatorDependencies = {
+  promptTitle: () => Promise<string>;
+  promptType: () => Promise<ProjectMetadata['type']>;
+  promptTemplate: () => Promise<TemplateName>;
+  promptSummary: () => Promise<string>;
+  confirmSlug: (slug: string) => Promise<boolean>;
+  promptSlug: (message: string, suggested: string) => Promise<string>;
+  write: (line: string) => void;
+  writeError: (line: string) => void;
 };
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -42,30 +55,13 @@ async function exists(path: string): Promise<boolean> {
 export async function renameNoReplace(
   staging: string,
   final: string,
-  hooks: { afterLock?: () => Promise<void> } = {},
+  hooks: { beforeRename?: () => Promise<void> } = {},
 ): Promise<void> {
-  const slug = final.slice(final.lastIndexOf('/') + 1);
-  const lockPath = join(dirname(final), `.create-${slug}.lock`);
-  let lock: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    try { lock = await open(lockPath, 'wx', 0o600); } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw conflict(slug);
-      throw error;
-    }
-    await hooks.afterLock?.();
-    if (await exists(final)) throw conflict(slug);
-    await rename(staging, final);
-  } finally {
-    if (lock !== undefined) {
-      const ownedLock = await lock.stat();
-      await lock.close();
-      try {
-        const currentLock = await lstat(lockPath);
-        if (currentLock.dev === ownedLock.dev && currentLock.ino === ownedLock.ino) await unlink(lockPath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      }
-    }
+  const slug = basename(final);
+  await hooks.beforeRename?.();
+  try { await atomicRenameNoReplace(staging, final); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw conflict(slug);
+    throw error;
   }
 }
 
@@ -110,32 +106,52 @@ export async function createProject(
     await writeFile(join(staging, 'project.json'), `${JSON.stringify(metadata, null, 2)}\n`, { mode: 0o644, flag: 'wx' });
     const validation = await validateProjectAt({ projectPath: staging, expectedDirectoryName: slug });
     if (!validation.ok) throw new Error(`Created project failed validation: ${validation.errors.map((error) => error.message).join('; ')}`);
-    await renameNoReplace(staging, final, { afterLock: dependencies.afterPublicationLock });
+    await renameNoReplace(staging, final, { beforeRename: dependencies.beforeAtomicPublication });
     return { path: final, metadata };
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
 }
 
-export async function runInteractiveCreator(root = resolve(dirname(fileURLToPath(import.meta.url)), '..')): Promise<void> {
-  const title = await input({ message: 'Project title:' });
-  const type = await select<ProjectMetadata['type']>({ message: 'Project type:', choices: ['web', 'service', 'cli', 'ai', 'script', 'other'].map((value) => ({ name: value, value: value as ProjectMetadata['type'] })) });
-  const template = await select<TemplateName>({ message: 'Template:', choices: ['blank', 'web', 'script'].map((value) => ({ name: value, value: value as TemplateName })) });
-  const summary = await input({ message: 'Summary:' });
+const nextStep = (template: TemplateName, relativePath: string): string => ({
+  blank: `Next: cd ${relativePath} and document your development setup.`,
+  web: `Next: cd ${relativePath} and open index.html in a browser.`,
+  script: `Next: cd ${relativePath} && node src/index.mjs`,
+})[template];
+
+const defaultInteractiveDependencies = (): InteractiveCreatorDependencies => ({
+  promptTitle: () => input({ message: 'Project title:' }),
+  promptType: () => select<ProjectMetadata['type']>({ message: 'Project type:', choices: ['web', 'service', 'cli', 'ai', 'script', 'other'].map((value) => ({ name: value, value: value as ProjectMetadata['type'] })) }),
+  promptTemplate: () => select<TemplateName>({ message: 'Template:', choices: ['blank', 'web', 'script'].map((value) => ({ name: value, value: value as TemplateName })) }),
+  promptSummary: () => input({ message: 'Summary:' }),
+  confirmSlug: (slug) => confirm({ message: `Use slug "${slug}"?`, default: true }),
+  promptSlug: (message, suggested) => input({ message, default: suggested }),
+  write: (line) => console.log(line),
+  writeError: (line) => console.error(line),
+});
+
+export async function runInteractiveCreator(
+  root = resolve(dirname(fileURLToPath(import.meta.url)), '..'),
+  dependencies: InteractiveCreatorDependencies = defaultInteractiveDependencies(),
+): Promise<void> {
+  const title = await dependencies.promptTitle();
+  const type = await dependencies.promptType();
+  const template = await dependencies.promptTemplate();
+  const summary = await dependencies.promptSummary();
   let suggestedSlug = deriveSlug(title);
   for (;;) {
-    const useSuggested = await confirm({ message: `Use slug "${suggestedSlug}"?`, default: true });
-    const slug = useSuggested ? suggestedSlug : await input({ message: 'Slug:', default: suggestedSlug });
+    const useSuggested = await dependencies.confirmSlug(suggestedSlug);
+    const slug = useSuggested ? suggestedSlug : await dependencies.promptSlug('Slug:', suggestedSlug);
     try {
       const result = await createProject({ root, title, type, template, summary, slug });
       const relativePath = `projects/${result.metadata.slug}`;
-      console.log(`Created ${relativePath}`);
-      console.log(`Next: cd ${relativePath}`);
+      dependencies.write(`Created ${relativePath}`);
+      dependencies.write(nextStep(template, relativePath));
       return;
     } catch (error) {
       if (!(error instanceof Error) || !/already exists|being created|slug/i.test(error.message)) throw error;
-      console.error(error.message);
-      suggestedSlug = await input({ message: 'Choose another slug:', default: suggestedSlug });
+      dependencies.writeError(error.message);
+      suggestedSlug = await dependencies.promptSlug('Choose another slug:', suggestedSlug);
     }
   }
 }
