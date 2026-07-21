@@ -3,8 +3,6 @@ import { posix } from 'node:path';
 import { z } from 'zod';
 
 const kebabCase = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const canonicalWebUrl = /^https?:\/\/[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]{1,4})?(?:[/?#][^\s\\]*)?$/;
-
 const hasAtMostCodePoints = (value: string, maximum: number) => Array.from(value).length <= maximum;
 
 const isoDate = z
@@ -33,8 +31,6 @@ const nonBlankString = (maximum: number) =>
 const webUrl = (protocols: readonly string[]) =>
   z
     .string()
-    .regex(canonicalWebUrl)
-    .url()
     .refine((value) => hasAtMostCodePoints(value, 2048), 'must contain at most 2048 characters')
     .refine((value) => {
       try {

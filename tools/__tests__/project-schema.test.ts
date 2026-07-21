@@ -23,6 +23,20 @@ const valid = {
 type Case = readonly [label: string, value: unknown, expected: boolean];
 const addFormats = addFormatsImport as unknown as typeof import('ajv-formats').default;
 
+const isAbsoluteWebUrl = (value: string, protocols: readonly string[]): boolean => {
+  try {
+    const url = new URL(value);
+    return protocols.includes(url.protocol) && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+};
+
+const urlWithCodePointLength = (length: number): string => {
+  const prefix = 'https://example.com/';
+  return `${prefix}${'😀'.repeat(length - Array.from(prefix).length)}`;
+};
+
 const withField = (field: keyof typeof valid, value: unknown): unknown => ({
   ...valid,
   [field]: value,
@@ -106,29 +120,40 @@ const cases: Case[] = [
   ['accepts a null demo', withField('demo', null), true],
   ['accepts an HTTP demo', withField('demo', 'http://example.com/demo'), true],
   ['accepts an HTTPS demo', withField('demo', 'https://example.com/demo?q=1'), true],
+  ['accepts an IDN demo host', withField('demo', 'https://例え.テスト/a'), true],
+  ['accepts an IPv6 demo host', withField('demo', 'http://[2001:db8::1]/demo'), true],
+  ['accepts user information in a demo URL', withField('demo', 'http://user:pass@example.com/demo'), true],
+  ['accepts a high valid demo port', withField('demo', 'http://example.com:65535/demo'), true],
+  ['accepts a 2048-code-point demo', withField('demo', urlWithCodePointLength(2048)), true],
+  ['rejects a 2049-code-point demo', withField('demo', urlWithCodePointLength(2049)), false],
   ['rejects a relative demo', withField('demo', '/demo'), false],
   ['rejects a protocol-relative demo', withField('demo', '//example.com/demo'), false],
   ['rejects a non-web demo scheme', withField('demo', 'ftp://example.com/demo'), false],
   ['rejects a malformed HTTP demo', withField('demo', 'https://'), false],
-  ['rejects an internationalized demo host', withField('demo', 'https://例え.テスト/a'), false],
-  ['rejects backslashes in a demo URL', withField('demo', String.raw`https://example.com\evil`), false],
-  ['rejects a demo port outside the canonical grammar', withField('demo', 'http://example.com:99999/'), false],
-  ['rejects demo user information', withField('demo', 'http://user@example.com/'), false],
+  ['accepts a WHATWG-normalized demo backslash', withField('demo', String.raw`https://example.com\evil`), true],
+  ['rejects an out-of-range demo port', withField('demo', 'http://example.com:99999/'), false],
   ['rejects a non-string demo', withField('demo', 42), false],
 
   ['accepts the local repository marker', withField('repository', './'), true],
   ['accepts an HTTPS repository', withField('repository', 'https://github.com/example/project'), true],
+  ['accepts an IDN repository host', withField('repository', 'https://例え.テスト/a'), true],
+  ['accepts an IPv6 repository host', withField('repository', 'https://[2001:db8::1]/project'), true],
+  ['accepts user information in a repository URL', withField('repository', 'https://user:pass@example.com/project'), true],
+  ['accepts a high valid repository port', withField('repository', 'https://example.com:65535/project'), true],
+  ['accepts a 2048-code-point repository', withField('repository', urlWithCodePointLength(2048)), true],
+  ['rejects a 2049-code-point repository', withField('repository', urlWithCodePointLength(2049)), false],
   ['rejects an HTTP repository', withField('repository', 'http://github.com/example/project'), false],
   ['rejects a non-web repository scheme', withField('repository', 'git://github.com/example/project'), false],
   ['rejects a malformed HTTPS repository', withField('repository', 'https://'), false],
-  ['rejects an internationalized repository host', withField('repository', 'https://例え.テスト/a'), false],
-  ['rejects backslashes in a repository URL', withField('repository', String.raw`https://example.com\evil`), false],
+  ['accepts a WHATWG-normalized repository backslash', withField('repository', String.raw`https://example.com\evil`), true],
   ['rejects a relative repository path', withField('repository', '../project'), false],
   ['rejects a null repository', withField('repository', null), false],
 
   ['accepts a null cover', withField('cover', null), true],
   ['accepts a safe relative cover', withField('cover', 'images/cover.webp'), true],
   ['accepts a simple cover filename', withField('cover', 'cover.png'), true],
+  ['accepts a 255-code-point Unicode cover', withField('cover', `${'😀'.repeat(251)}.png`), true],
+  ['rejects a 256-code-point Unicode cover', withField('cover', `${'😀'.repeat(252)}.png`), false],
   ['rejects an empty cover', withField('cover', ''), false],
   ['rejects an absolute POSIX cover', withField('cover', '/images/cover.png'), false],
   ['rejects a traversing cover', withField('cover', '../secret.png'), false],
@@ -152,6 +177,14 @@ const cases: Case[] = [
 describe('project metadata contract', () => {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
+  ajv.addFormat('absolute-http-url', {
+    type: 'string',
+    validate: (value: string) => isAbsoluteWebUrl(value, ['http:', 'https:']),
+  });
+  ajv.addFormat('absolute-https-url', {
+    type: 'string',
+    validate: (value: string) => isAbsoluteWebUrl(value, ['https:']),
+  });
   ajv.addKeyword({
     keyword: 'updatedAtNotBeforeCreatedAt',
     schemaType: 'boolean',
