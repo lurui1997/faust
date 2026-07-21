@@ -13,13 +13,13 @@
   "summary": "用不同向量模型比较中文语义搜索效果。",
   "status": "building",
   "type": "ai",
-  "tags": ["embeddings", "semantic-search"],
+  "tags": ["embeddings", "search"],
   "createdAt": "2026-07-21",
   "updatedAt": "2026-07-21",
   "featured": false,
-  "demo": "https://example.com/semantic-search",
+  "demo": null,
   "repository": "./",
-  "cover": "assets/cover.webp"
+  "cover": null
 }
 ```
 
