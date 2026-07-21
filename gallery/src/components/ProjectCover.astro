@@ -1,0 +1,20 @@
+---
+type Props = {
+  title: string;
+  coverHref: string | null;
+};
+
+const { title, coverHref } = Astro.props;
+---
+
+<figure class:list={['project-cover', { 'project-cover--fallback': coverHref === null }]}>
+  {coverHref
+    ? <img src={coverHref} alt={`Cover for ${title}`} />
+    : <div role="img" aria-label={`No cover for ${title}`}><span>No cover for {title}</span></div>}
+</figure>
+
+<style>
+  .project-cover { margin: 2rem 0; border-block: 1px solid #b9beba; padding-block: 1rem; }
+  img { display: block; width: 100%; height: auto; }
+  .project-cover--fallback div { min-height: 16rem; display: grid; place-items: center; background: #e4e7e4; color: #555d5c; }
+</style>

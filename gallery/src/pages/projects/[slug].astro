@@ -1,0 +1,50 @@
+---
+import type { GalleryProject } from '../../../../tools/generate-project-index.js';
+import ProjectCover from '../../components/ProjectCover.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { projects } from '../../lib/projects.js';
+
+export function getStaticPaths() {
+  return projects.map((project) => ({ params: { slug: project.slug }, props: { project } }));
+}
+
+type Props = { project: GalleryProject };
+const { project } = Astro.props;
+---
+
+<BaseLayout title={`${project.title} — Faust`} description={project.summary}>
+  <main id="content">
+    <nav aria-label="Breadcrumb"><a href={import.meta.env.BASE_URL}>All projects</a></nav>
+    <article>
+      <header>
+        <p>{project.type} · {project.status}</p>
+        <h1>{project.title}</h1>
+        <p>{project.summary}</p>
+      </header>
+      <ProjectCover title={project.title} coverHref={project.coverHref} />
+      <dl>
+        <div><dt>Created</dt><dd><time datetime={project.createdAt}>{project.createdAt}</time></dd></div>
+        <div><dt>Updated</dt><dd><time datetime={project.updatedAt}>{project.updatedAt}</time></dd></div>
+        <div><dt>Tags</dt><dd>{project.tags.join(', ') || 'None'}</dd></div>
+      </dl>
+      <section aria-labelledby="excerpt-heading">
+        <h2 id="excerpt-heading">About</h2>
+        <div class="excerpt" set:html={project.excerptHtml} />
+      </section>
+      <footer>
+        {project.demo && <a href={project.demo}>Demo</a>}
+        <a href={project.sourceHref}>Source</a>
+      </footer>
+    </article>
+  </main>
+</BaseLayout>
+
+<style>
+  article { max-width: 64rem; }
+  h1 { font-size: clamp(2.5rem, 9vw, 7rem); line-height: .95; margin-block: 1rem; }
+  dl { display: flex; flex-wrap: wrap; gap: 2rem; padding-block: 2rem; border-bottom: 1px solid #b9beba; }
+  dl div { display: grid; gap: .25rem; }
+  dd { margin: 0; }
+  .excerpt { font-size: 1.15rem; max-width: 44rem; }
+  footer { display: flex; gap: 1.5rem; margin-top: 3rem; }
+</style>

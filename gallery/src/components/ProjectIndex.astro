@@ -1,0 +1,61 @@
+---
+import type { GalleryProject } from '../../../tools/generate-project-index.js';
+
+type Props = { projects: GalleryProject[] };
+const { projects } = Astro.props;
+const visibleProjects = projects.filter((project) => project.status !== 'archived');
+const projectTypes = [...new Set(projects.map(({ type }) => type))].sort();
+---
+
+<section aria-labelledby="projects-heading">
+  <div class="index-heading">
+    <h2 id="projects-heading">Projects</h2>
+    <p aria-live="polite">{visibleProjects.length} {visibleProjects.length === 1 ? 'project' : 'projects'}</p>
+  </div>
+
+  <form class="filters" aria-label="Filter projects">
+    <label>Type
+      <select name="type">
+        <option value="all">All types</option>
+        {projectTypes.map((type) => <option value={type}>{type}</option>)}
+      </select>
+    </label>
+    <label>Status
+      <select name="status">
+        <option value="active">Active</option>
+        <option value="all">All statuses</option>
+        <option value="idea">Idea</option>
+        <option value="building">Building</option>
+        <option value="shipped">Shipped</option>
+        <option value="archived">Archived</option>
+      </select>
+    </label>
+  </form>
+
+  {projects.length === 0
+    ? <p>No projects yet. Create one with <code>pnpm create:project</code>.</p>
+    : <ol class="project-list">
+        {visibleProjects.map((project) => (
+          <li data-type={project.type} data-status={project.status} data-featured={project.featured || undefined}>
+            <article>
+              <p>{project.type} · {project.status} · <time datetime={project.updatedAt}>{project.year}</time></p>
+              <h3><a href={project.href}>{project.title}</a></h3>
+              <p>{project.summary}</p>
+            </article>
+          </li>
+        ))}
+      </ol>}
+</section>
+
+<style>
+  .index-heading, .filters { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+  .filters { justify-content: flex-start; padding-block: 1.5rem; border-block: 1px solid #b9beba; }
+  label { display: grid; gap: .35rem; }
+  select { font: inherit; background: transparent; border: 1px solid #8e9693; padding: .4rem 2rem .4rem .5rem; }
+  .project-list { list-style: decimal-leading-zero; padding-left: 2.5rem; }
+  li { padding: 2rem 0 2.5rem 1rem; border-bottom: 1px solid #b9beba; }
+  li[data-featured] { border-bottom-color: #555d5c; }
+  h3 { font-size: clamp(1.6rem, 4vw, 3.2rem); margin-block: .3rem; }
+  p { max-width: 48rem; }
+  @media (max-width: 36rem) { .index-heading, .filters { align-items: stretch; flex-direction: column; } }
+</style>
