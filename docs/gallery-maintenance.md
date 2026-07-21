@@ -1,6 +1,6 @@
 # 画廊维护 / Gallery maintenance
 
-本文面向仓库 owner 和贡献者。根工具只读取项目契约和 README，不执行 `projects/*` 中的代码。
+本文面向仓库 owner 和贡献者。根工具只读取项目元数据、README 和元数据显式引用的封面普通文件；它不会执行 `projects/*` 中的代码、安装项目依赖或运行项目自己的构建与测试。
 
 ## 日常开发与空画廊
 
@@ -28,7 +28,7 @@ demo-project: cover — cover "missing.webp" is missing or unreadable; fix: add 
 
 ## GitHub Pages 配置
 
-默认发布身份来自 `tools/config.ts`：owner `lurui1997`、仓库 `faust`、分支 `main`，站点 `https://lurui1997.github.io`，base `/faust`。分叉、重命名或预览构建时可设置：
+默认发布身份来自 `tools/config.ts`：owner `lurui1997`、仓库 `faust`、分支 `main`，站点 `https://lurui1997.github.io`，base `/faust`。未设置 `FAUST_BASE` 时，工具与 Astro 都从 `FAUST_GITHUB_REPOSITORY` 派生 `/<仓库名>`，确保生成链接与构建路径一致。分叉、重命名或预览构建时可设置：
 
 | 环境变量 | 作用 |
 | --- | --- |
