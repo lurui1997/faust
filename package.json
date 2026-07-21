@@ -1,0 +1,37 @@
+{
+  "name": "faust-gallery-manager",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.13.1",
+  "engines": { "node": ">=22 <23" },
+  "scripts": {
+    "validate": "tsx tools/validate-projects.ts",
+    "generate": "tsx tools/generate-project-index.ts",
+    "dev": "pnpm validate && pnpm generate && astro dev --root gallery",
+    "build": "pnpm validate && pnpm generate && astro check --root gallery && astro build --root gallery",
+    "test": "vitest run",
+    "check": "pnpm validate && pnpm generate && pnpm test && astro check --root gallery && astro build --root gallery",
+    "create:project": "tsx tools/create-project.ts",
+    "list:projects": "tsx tools/list-projects.ts"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.8.0",
+    "markdown-it": "^14.1.0",
+    "sanitize-html": "^2.17.0",
+    "string-width": "8.2.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.16.5",
+    "@types/sanitize-html": "^2.16.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "astro": "^5.12.3",
+    "happy-dom": "^18.0.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,9 @@
+node_modules/
+gallery/node_modules/
+gallery/.astro/
+gallery/dist/
+gallery/src/data/projects.generated.json
+gallery/public/.project-assets-*
+gallery/public/project-assets
+coverage/
+.DS_Store

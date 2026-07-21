@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://faust.local/project.schema.json",
+  "title": "Faust project metadata",
+  "description": "The authoritative metadata contract for projects published in the Faust gallery.",
+  "type": "object",
+  "updatedAtNotBeforeCreatedAt": true,
+  "additionalProperties": false,
+  "required": [
+    "title",
+    "slug",
+    "summary",
+    "status",
+    "type",
+    "tags",
+    "createdAt",
+    "updatedAt",
+    "featured",
+    "demo",
+    "repository",
+    "cover"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^(?=.*\\S)[\\s\\S]+$"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "pattern": "^(?=.*\\S)[\\s\\S]+$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["idea", "building", "shipped", "archived"]
+    },
+    "type": {
+      "type": "string",
+      "enum": ["web", "service", "cli", "ai", "script", "other"]
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date"
+    },
+    "featured": {
+      "type": "boolean"
+    },
+    "demo": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "absolute-http-url"
+        },
+        { "type": "null" }
+      ]
+    },
+    "repository": {
+      "anyOf": [
+        { "const": "./" },
+        {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "absolute-https-url"
+        }
+      ]
+    },
+    "cover": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^(?!/)(?!.*\\\\)(?!.*[\\u0000-\\u001F\\u007F-\\u009F])(?!.*%2[eE])(?!\\.\\.?(?:/|$))(?!.*\\/\\.\\.?(?:/|$))(?!.*//)(?!.*:)(?!.*\\/$)[^?#]+$"
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}

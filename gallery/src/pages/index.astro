@@ -1,0 +1,28 @@
+---
+import ProjectIndex from '../components/ProjectIndex.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { projects } from '../lib/projects.js';
+---
+
+<BaseLayout>
+  <main id="content">
+    <div class="intro">
+      <p class="eyebrow">Personal experiments / ongoing</p>
+      <h1>Ideas, kept<br />in public.</h1>
+      <p class="lede">A working archive of small tools, unfinished questions, and things worth returning to.</p>
+    </div>
+    <ProjectIndex projects={projects} instanceId="home-projects" />
+  </main>
+</BaseLayout>
+
+<style>
+  .intro { display: grid; gap: 1.5rem; }
+  h1 { max-width: 10ch; margin: 0 0 1rem -.045em; font-size: var(--text-display); line-height: .82; }
+  .eyebrow, .lede { margin: 0; }
+  .lede { color: var(--ink-muted); font-size: 1.125rem; }
+  @media (min-width: 48.0625rem) {
+    .intro { grid-template-columns: minmax(9rem, .35fr) 1fr; }
+    .intro h1 { grid-column: 2; }
+    .lede { grid-column: 2; margin-left: 35%; }
+  }
+</style>

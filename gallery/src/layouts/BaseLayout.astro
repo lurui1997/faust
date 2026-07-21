@@ -1,0 +1,31 @@
+---
+import '../styles/global.css';
+
+type Props = {
+  title?: string;
+  description?: string;
+};
+
+const {
+  title = 'Faust — Project Archive',
+  description = 'A quiet archive of software ideas, experiments, and finished work.',
+} = Astro.props;
+const homeHref = import.meta.env.BASE_URL;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <header class="site-header">
+      <a href={homeHref} aria-label="Faust project archive home">Faust <span aria-hidden="true">/ 26</span></a>
+    </header>
+    <slot />
+  </body>
+</html>
