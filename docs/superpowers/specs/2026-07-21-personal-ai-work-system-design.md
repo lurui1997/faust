@@ -76,6 +76,8 @@ The sync boundary is represented in the data model but no cloud sync service is 
 
 The miner finds repeated event sequences and scores frequency, estimated time cost, confidence, and automation feasibility. Its output is an opportunity with evidence references, not an executable action. Low-confidence opportunities are retained for analysis but omitted from the daily review.
 
+Scoring weights and the daily-review threshold are explicit versioned configuration, not hidden model judgment. Phase 0 starts with conservative defaults and uses the user's repeated/not-repeated labels to calibrate them. Tests use fixed configurations and fixtures so opportunity ranking is deterministic.
+
 ### 6.4 Automation Composer
 
 The composer turns an accepted opportunity into an automation draft. Drafts use only capabilities declared in the registry. A draft cannot grant itself permissions or execute merely because it was generated successfully.
@@ -108,6 +110,8 @@ The runner executes an approved trial with explicit working directories, timeout
 
 The local web workbench shows daily opportunities, source evidence, expected benefit, decision graphs, automation drafts, permission requests, trial results, approval history, reuse, and time saved. The decision graph is rendered from structured state and may be exported as Mermaid first; PlantUML export is deferred unless demanded by actual use.
 
+By default, protected raw event details expire after 30 days and normalized non-sensitive events after 180 days. The user can shorten these periods, delete data immediately, or explicitly retain selected records longer. The product explains these defaults before collection begins.
+
 ## 7. Core State Flow
 
 An opportunity and its automation progress through explicit states:
@@ -127,7 +131,7 @@ The user provides an open-source GitHub repository and an interest description. 
 
 1. Reads repository metadata and open issues using authorized read access.
 2. Ranks issues for relevance, feasibility, reproducibility, repository contribution rules, and expected testability.
-3. Returns exactly three candidates with evidence and risks; it does not silently choose one.
+3. Targets three candidates with evidence and risks; it does not silently choose one.
 4. After the user selects a candidate and approves the trial, creates an isolated branch or worktree.
 5. Reproduces the issue when possible, modifies code, and runs the repository's documented tests.
 6. Presents the final diff, commands run, test results, unresolved risks, and an explanation of the repair.
@@ -135,6 +139,8 @@ The user provides an open-source GitHub repository and an interest description. 
 8. On approval, submits the pull request using the repository's contribution template and returns its URL.
 
 If the issue cannot be reproduced, the repository cannot be built, tests fail, or the proposed repair exceeds the approved scope, the run stops and reports evidence. It does not submit a pull request.
+
+If fewer than three issues satisfy the minimum relevance, feasibility, and safety threshold, the system returns the viable candidates, explains why the target of three was not met, and stops before repair until the user broadens the interest criteria, supplies another repository, or explicitly chooses from the smaller set.
 
 ## 9. Failure and Recovery Rules
 
@@ -171,6 +177,8 @@ Automated tests cover:
 Security tests cover path traversal, shell injection, secret leakage, prompt-injection attempts from repository content, stale approvals, and privilege escalation. Manual verification covers daily-review usefulness, explanation clarity, deletion controls, keyboard use, and confirmation copy.
 
 Value verification uses four measures: opportunity acceptance rate, enabled automations, reuse count, and measured or user-confirmed time saved. The release succeeds only when it meets the two-automation/four-hour target during a four-week personal trial and completes the Turing scenario without an unapproved external write.
+
+Time saved compares an automation's observed run duration plus required review time with the median duration of at least three comparable manual occurrences. When three observations are unavailable, the workbench asks the user to confirm a baseline and labels the result as user-estimated. It never mixes measured and estimated savings without displaying their provenance.
 
 ## 12. Delivery Phases
 
@@ -216,8 +224,7 @@ The initial product is complete when:
 2. Daily review presents no more than three evidence-backed opportunities and can present none.
 3. The user can convert an opportunity into a declared automation, inspect its decision graph, approve a bounded trial, and see its exact results.
 4. The system cannot perform an external write without a current approval bound to the exact action.
-5. Turing returns three relevant issue candidates and completes one approved repair through pull-request creation with passing documented tests.
+5. Turing targets three relevant issue candidates, handles a smaller viable set explicitly, and completes one approved repair through pull-request creation with passing documented tests.
 6. Failure paths preserve unrelated user work, expose actionable evidence, and never broaden permission automatically.
 7. Automated functional and security tests pass, including dry-run external actions.
 8. A four-week personal trial produces at least two reusable automations and at least four hours of measured or user-confirmed savings.
-
