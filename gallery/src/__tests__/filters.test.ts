@@ -90,6 +90,25 @@ describe('project filter enhancement', () => {
     expect(document.querySelector('[data-project-count]')?.textContent).toBe('2 projects');
   });
 
+  it('preserves the URL fragment and existing history state through changes and reset', () => {
+    const state = { navigation: 'kept' };
+    window.history.replaceState(state, '', '/faust/?type=web#projects');
+    initializeProjectFilters();
+    expect(window.location.pathname + window.location.search + window.location.hash)
+      .toBe('/faust/?type=web#projects');
+    expect(window.history.state).toEqual(state);
+
+    select('status').value = 'shipped';
+    select('status').dispatchEvent(new Event('change', { bubbles: true }));
+    expect(window.location.pathname + window.location.search + window.location.hash)
+      .toBe('/faust/?type=web&status=shipped#projects');
+    expect(window.history.state).toEqual(state);
+
+    (document.querySelector('[data-filter-reset]') as HTMLButtonElement).click();
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe('/faust/#projects');
+    expect(window.history.state).toEqual(state);
+  });
+
   it('keeps the no-match state hidden for an empty gallery', () => {
     document.body.innerHTML = indexMarkup('');
     initializeProjectFilters();

@@ -15,12 +15,12 @@ export function readFilterState(params: URLSearchParams, projectTypes: readonly 
   };
 }
 
-export function filterUrl(pathname: string, filters: FilterState): string {
+export function filterUrl(pathname: string, filters: FilterState, hash = ''): string {
   const params = new URLSearchParams();
   if (filters.type !== DEFAULT_FILTERS.type) params.set('type', filters.type);
   if (filters.status !== DEFAULT_FILTERS.status) params.set('status', filters.status);
   const query = params.toString();
-  return query === '' ? pathname : `${pathname}?${query}`;
+  return query === '' ? `${pathname}${hash}` : `${pathname}?${query}${hash}`;
 }
 
 export function showNoMatches(visible: number, total: number): boolean {
@@ -73,7 +73,11 @@ function initializeProjectIndex(index: HTMLElement, initialParams: URLSearchPara
     }
     count.textContent = `${visible} ${visible === 1 ? 'project' : 'projects'}`;
     empty.hidden = !showNoMatches(visible, rows.length);
-    window.history.replaceState(null, '', filterUrl(window.location.pathname, filters));
+    window.history.replaceState(
+      window.history.state,
+      '',
+      filterUrl(window.location.pathname, filters, window.location.hash),
+    );
   };
 
   form.addEventListener('change', apply);
