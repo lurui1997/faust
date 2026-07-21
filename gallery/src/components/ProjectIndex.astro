@@ -11,21 +11,22 @@ const projectTypes = [...new Set(projects.map(({ type }) => type))].sort();
 
 <section aria-labelledby={headingId} data-project-index>
   <div class="index-heading">
-    <h2 id={headingId} tabindex="-1" data-project-heading>Projects</h2>
-    <p aria-live="polite" aria-atomic="true" data-project-count>{visibleProjects.length} {visibleProjects.length === 1 ? 'project' : 'projects'}</p>
+    <h2 id={headingId} tabindex="-1" data-project-heading>Index</h2>
+    <p class="project-count" aria-live="polite" aria-atomic="true" data-project-count>{visibleProjects.length} {visibleProjects.length === 1 ? 'project' : 'projects'}</p>
   </div>
 
   <FilterBar projectTypes={projectTypes} idPrefix={instanceId} />
 
   {projects.length === 0
     ? <p>No projects yet. Create one with <code>pnpm create:project</code>.</p>
-    : <ol class="project-list">
+    : <ol class="project-list" role="list">
         {projects.map((project) => (
           <li data-project-row data-type={project.type} data-status={project.status} data-featured={project.featured || undefined} hidden={project.status === 'archived'}>
-            <article>
-              <p>{project.type} · {project.status} · <time datetime={project.updatedAt}>{project.year}</time></p>
+            <article class="project-row">
+              <p class="project-meta"><span>{project.type}</span><span>{project.status}</span><time datetime={project.updatedAt}>{project.year}</time></p>
               <h3><a href={project.href}>{project.title}</a></h3>
-              <p>{project.summary}</p>
+              <p class="project-summary">{project.summary}</p>
+              {project.featured && <span class="featured-mark">Selected work</span>}
             </article>
           </li>
         ))}
@@ -37,11 +38,29 @@ const projectTypes = [...new Set(projects.map(({ type }) => type))].sort();
 </section>
 
 <style>
+  section { margin-top: var(--space-3xl); }
   .index-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
-  .project-list { list-style: decimal-leading-zero; padding-left: 2.5rem; }
-  li { padding: 2rem 0 2.5rem 1rem; border-bottom: 1px solid #b9beba; }
-  li[data-featured] { border-bottom-color: #555d5c; }
-  h3 { font-size: clamp(1.6rem, 4vw, 3.2rem); margin-block: .3rem; }
-  p { max-width: 48rem; }
-  @media (max-width: 36rem) { .index-heading { align-items: stretch; flex-direction: column; } }
+  .index-heading h2 { margin: 0; font-size: clamp(2rem, 5vw, 4rem); }
+  .project-count { color: var(--ink-muted); font-size: .8125rem; font-variant-numeric: tabular-nums; letter-spacing: .08em; text-transform: uppercase; }
+  .project-list { margin: 0; padding: 0; list-style: none; counter-reset: archive; }
+  li { counter-increment: archive; position: relative; border-bottom: 1px solid var(--rule); }
+  .project-row { display: grid; gap: .75rem; padding-block: 2rem 2.5rem; }
+  .project-row::before { content: counter(archive, decimal-leading-zero); color: var(--ink-muted); font-size: .8125rem; font-variant-numeric: tabular-nums; letter-spacing: .08em; }
+  .project-meta { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin: 0; color: var(--ink-muted); font-size: .75rem; font-variant-numeric: tabular-nums; letter-spacing: .09em; text-transform: uppercase; }
+  h3 { margin: 0; font-size: var(--text-item); line-height: .98; }
+  h3 a { display: inline-flex; align-items: center; min-height: 2.75rem; text-decoration-line: underline; text-decoration-thickness: .055em; transition: text-decoration-thickness 150ms var(--ease-out-quart); }
+  h3 a:focus-visible, h3 a:hover { text-decoration-thickness: .09em; }
+  .project-summary { margin: 0; color: var(--ink-muted); }
+  .featured-mark { display: inline-flex; align-items: center; gap: .5rem; width: max-content; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
+  .featured-mark::before { content: "✦"; font-size: .8em; }
+  [data-filter-empty] { padding-block: 2rem; border-bottom: 1px solid var(--rule); }
+  [data-filter-empty] button { min-height: 2.75rem; padding: .5rem .75rem; color: var(--paper); background: var(--ink); border: 1px solid var(--ink); }
+  @media (min-width: 48.0625rem) {
+    .project-row { grid-template-columns: 3rem minmax(0, 1.4fr) minmax(16rem, .6fr); gap: 1.5rem; align-items: start; padding-block: 2.5rem 3rem; }
+    .project-row::before { grid-column: 1; grid-row: 1 / 4; padding-top: .45rem; }
+    .project-meta { grid-column: 3; grid-row: 1; justify-content: space-between; padding-top: .45rem; }
+    h3 { grid-column: 2; grid-row: 1 / 3; }
+    .project-summary { grid-column: 3; grid-row: 2; }
+    .featured-mark { grid-column: 2; grid-row: 3; }
+  }
 </style>

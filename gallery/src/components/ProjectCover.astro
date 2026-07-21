@@ -10,11 +10,13 @@ const { title, coverHref } = Astro.props;
 <figure class:list={['project-cover', { 'project-cover--fallback': coverHref === null }]}>
   {coverHref
     ? <img src={coverHref} alt={`Cover for ${title}`} />
-    : <div role="img" aria-label={`No cover for ${title}`}><span>No cover for {title}</span></div>}
+    : <div role="img" aria-label={`No cover for ${title}`}><span aria-hidden="true">{title}</span><small>No cover for {title}</small></div>}
 </figure>
 
 <style>
-  .project-cover { margin: 2rem 0; border-block: 1px solid #b9beba; padding-block: 1rem; }
+  .project-cover { margin: var(--space-2xl) 0; border-block: 1px solid var(--rule); padding-block: 1rem; }
   img { display: block; width: 100%; height: auto; }
-  .project-cover--fallback div { min-height: 16rem; display: grid; place-items: center; background: #e4e7e4; color: #555d5c; }
+  .project-cover--fallback div { min-height: clamp(18rem, 48vw, 42rem); display: grid; align-content: space-between; gap: 2rem; padding: clamp(1.25rem, 5vw, 4rem); overflow: hidden; color: var(--ink); background: var(--paper-deep); }
+  .project-cover--fallback span { max-width: 12ch; font-family: var(--font-display); font-size: clamp(3rem, 10vw, 9rem); line-height: .82; letter-spacing: -.06em; overflow-wrap: anywhere; }
+  .project-cover--fallback small { color: var(--ink-muted); font-size: .75rem; letter-spacing: .1em; text-transform: uppercase; }
 </style>
