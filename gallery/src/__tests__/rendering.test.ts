@@ -57,6 +57,7 @@ afterEach(async () => {
   await Promise.all([fixtureRoot, outputRoot].map((path) => rm(path, { recursive: true, force: true })));
   delete process.env.FAUST_BASE;
   delete process.env.FAUST_SITE;
+  delete process.env.FAUST_GITHUB_REPOSITORY;
   vi.resetModules();
 });
 
@@ -79,8 +80,9 @@ describe('static gallery rendering', () => {
       '# Archived\n\nAn archived excerpt.',
     );
 
-    process.env.FAUST_BASE = '/test-base';
+    delete process.env.FAUST_BASE;
     process.env.FAUST_SITE = 'https://example.test';
+    process.env.FAUST_GITHUB_REPOSITORY = 'lab';
     vi.resetModules();
     const { generateProjectIndex } = await import('../../../tools/generate-project-index.js');
     await generateProjectIndex({ root: fixtureRoot, write: () => undefined });
@@ -88,7 +90,11 @@ describe('static gallery rendering', () => {
       'exec', 'astro', 'build', '--root', join(fixtureRoot, 'gallery'), '--outDir', outputRoot,
     ], {
       cwd: repositoryRoot,
-      env: { ...process.env, FAUST_BASE: '/test-base', FAUST_SITE: 'https://example.test' },
+      env: {
+        ...process.env,
+        FAUST_SITE: 'https://example.test',
+        FAUST_GITHUB_REPOSITORY: 'lab',
+      },
     });
 
     const home = await readFile(join(outputRoot, 'index.html'), 'utf8');
@@ -96,8 +102,8 @@ describe('static gallery rendering', () => {
     const plain = await readFile(join(outputRoot, 'projects/plain/index.html'), 'utf8');
 
     expect(home).toContain('2 projects');
-    expect(home).toContain('href="/test-base/projects/covered/"');
-    expect(home).toContain('href="/test-base/projects/plain/"');
+    expect(home).toContain('href="/lab/projects/covered/"');
+    expect(home).toContain('href="/lab/projects/plain/"');
     expect(home).toMatch(/<form[^>]*method="get"[^>]*data-project-filters/);
     expect(home).toMatch(/<noscript[^>]*>Interactive filtering requires JavaScript\. The default active projects remain readable\.<\/noscript>/);
     expect(home).toMatch(/<button type="submit"[^>]*data-filter-apply[^>]*hidden/);
@@ -113,15 +119,22 @@ describe('static gallery rendering', () => {
     expect(home).toMatch(/<button type="button" data-filter-reset[^>]*>Reset filters<\/button>/);
     expect(covered).toContain('href="https://demo.example/covered"');
     expect(covered).toContain('href="https://code.example/covered"');
-    expect(covered).toContain('src="/test-base/project-assets/covered/cover.png"');
+    expect(covered).toContain('src="/lab/project-assets/covered/cover.png"');
     expect(await readFile(join(outputRoot, 'project-assets/covered/cover.png'), 'utf8')).toBe('fixture image');
     expect(covered).toContain('<strong>safe</strong>');
     expect(plain).toContain('No cover for Plain Work');
-    expect(plain).toContain('href="https://github.com/lurui1997/faust/tree/main/projects/plain"');
+    expect(plain).toContain('href="https://github.com/lurui1997/lab/tree/main/projects/plain"');
     expect(plain).not.toMatch(/>\s*Demo\s*</);
     for (const html of [covered, plain]) {
       expect(html).not.toMatch(/<script|javascript:|\son[a-z]+\s*=|<img src=x/i);
     }
+  });
+
+  it('lets an explicit Pages base override the configured repository', async () => {
+    process.env.FAUST_BASE = '/explicit-base';
+    process.env.FAUST_GITHUB_REPOSITORY = 'lab';
+    const configModule = await import(new URL('../../astro.config.mjs?explicit-base', import.meta.url).href);
+    expect(configModule.default.base).toBe('/explicit-base');
   });
 
 });
