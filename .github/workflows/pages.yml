@@ -1,0 +1,57 @@
+name: Gallery
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+        env:
+          FAUST_GITHUB_OWNER: ${{ github.repository_owner }}
+          FAUST_GITHUB_REPOSITORY: ${{ github.event.repository.name }}
+          FAUST_GITHUB_BRANCH: ${{ github.event.repository.default_branch }}
+          FAUST_SITE: https://${{ github.repository_owner }}.github.io
+          FAUST_BASE: /${{ github.event.repository.name }}
+      - if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+        uses: actions/configure-pages@v5
+      - if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: gallery/dist
+
+  deploy:
+    if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
