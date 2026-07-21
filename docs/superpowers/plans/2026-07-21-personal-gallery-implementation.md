@@ -655,6 +655,8 @@ it('leaves no project or staging directory when validation fails', async () => {
 Add cases for slug derivation (`Crème & Search` -> `creme-search`), explicit invalid slug, existing-directory conflict, and template traversal/unknown placeholders.
 Add a creator integration case where the random staging basename differs from the intended slug and spy on the Task 4 API to verify `createProject` calls `validateProjectAt({ projectPath: <actual staging path>, expectedDirectoryName: 'my-idea' })`. Add a deterministic race test that creates the final destination immediately before the no-replace syscall and asserts the creator fails without overwriting it. Add a concurrent full-creator test that asserts exactly one final project is published.
 
+Test the native boundary through injectable platform, architecture, temporary-directory, compiler runner, and helper runner adapters. Cover successful first compilation, cache reuse without recompilation, simultaneous cache misses, missing or failing `/usr/bin/cc`, unsupported platforms, untrusted cache ownership/mode, and stable mapping of native conflict/unsupported/failure exit codes.
+
 - [ ] **Step 2: Run the creator suite and verify red**
 
 Run: `pnpm exec vitest run tools/__tests__/create-project.test.ts`
@@ -697,6 +699,8 @@ Import the already committed `validateProjectAt` from `tools/validate-projects.t
 
 Implement and test `renameNoReplace(staging, final)` as the publication boundary using a small audited native helper committed as C source. On Linux it calls `renameat2(..., RENAME_NOREPLACE)`; on macOS it calls `renamex_np(..., RENAME_EXCL)`. Compile the helper on demand with `/usr/bin/cc` into a private temporary cache keyed by source, platform, and architecture; invoke compiler and helper with argument arrays and no shell. Map an existing destination to a stable conflict, fail actionably for unsupported platforms or missing compiler, and never commit the binary. No persistent creator lock is used, so a killed process cannot leave a stale lock; the kernel no-replace primitive serializes competing publishers. Do not use check-then-rename, copy-then-delete, or remove/recreate the destination. In `finally`, remove only the resolved staging directory; never delete or replace an existing destination.
 
+The concrete cache protocol is: create a per-user directory under the OS temporary directory with mode `0700`; reject a cache not owned by the current user or writable/readable by group/other; compile into a unique `mkdtemp` child; verify compiler success and mark the candidate `0700`; atomically publish the cache entry with a hard link so simultaneous first-use losers receive `EEXIST` and reuse the already-complete regular file; remove the unique build directory in `finally`. The cache key hashes helper source, platform, and architecture. The helper ABI is `rename-noreplace SOURCE DESTINATION`: exit `0` means success, `2` means invalid invocation, `3` maps to JavaScript `EEXIST`, `4` means the kernel lacks the primitive, and every other exit includes sanitized stderr in an actionable error. All subprocesses use argument arrays with `shell: false`.
+
 - [ ] **Step 5: Add the interactive adapter without coupling prompts to core logic**
 
 The `isMain` path prompts for title, type, template, summary, then derived slug confirmation/edit. If the slug conflicts, re-prompt; on success print the created path and a template-specific exact next command. Keep `createProject()` prompt-free for tests and inject prompt/output adapters for deterministic coverage.
@@ -716,7 +720,7 @@ Expected: prompts appear; choose `Smoke Test`, `other`, `blank`, and a short sum
 - [ ] **Step 8: Commit scaffolding**
 
 ```bash
-git add templates tools/lib/templates.ts tools/create-project.ts tools/__tests__/create-project.test.ts
+git add templates tools/lib/templates.ts tools/lib/rename-noreplace.ts tools/native/rename-noreplace.c tools/create-project.ts tools/__tests__/create-project.test.ts
 git commit -m "feat: scaffold projects from safe templates"
 ```
 
@@ -966,7 +970,7 @@ git commit -m "feat: style an accessible responsive project archive"
 
 - [ ] **Step 1: Rewrite the root README as a fresh-checkout guide**
 
-Include purpose, exact tree, Node 22/corepack prerequisites, `pnpm install`, all six stable commands, project isolation, creation/update workflow, statuses, generated-file note, and links to both detailed documents. Explicitly state that root commands never install/build project implementations.
+Include purpose, exact tree, Node 22/corepack prerequisites, `pnpm install`, all six stable commands, project isolation, creation/update workflow, statuses, generated-file note, and links to both detailed documents. Document that first project creation supports Linux/macOS and requires `/usr/bin/cc` (Xcode Command Line Tools or a Linux C compiler toolchain) to build the private atomic-publication helper; unsupported platforms and missing compilers fail actionably. Explicitly state that root commands never install/build project implementations and that no native binary is committed.
 
 - [ ] **Step 2: Document every schema field from `project.schema.json`**
 
