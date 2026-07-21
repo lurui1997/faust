@@ -11,15 +11,20 @@ markdown.validateLink = () => true;
 const htmlDetector = new MarkdownIt({ html: true, linkify: false });
 htmlDetector.validateLink = () => true;
 
-const paragraphChildren = (tokens: Token[]): Token[] | undefined => {
+type ParagraphTokens = { children: Token[]; sourceRange: string };
+
+const paragraphs = (tokens: Token[]): ParagraphTokens[] => {
   let index = 0;
+  const found: ParagraphTokens[] = [];
   if (tokens[index]?.type === 'heading_open' && tokens[index]?.tag === 'h1') index += 3;
   for (; index < tokens.length; index += 1) {
     if (tokens[index]?.type !== 'paragraph_open' || tokens[index]?.level !== 0) continue;
     const inline = tokens[index + 1];
-    if (inline?.type === 'inline' && inline.children) return inline.children;
+    if (inline?.type === 'inline' && inline.children) {
+      found.push({ children: inline.children, sourceRange: (inline.map ?? []).join(':') });
+    }
   }
-  return undefined;
+  return found;
 };
 
 const withoutRawHtml = (tokens: Token[]): Token[] => {
@@ -145,14 +150,17 @@ export const visibleText = (html: string): string => markdown.utils.unescapeAll(
 );
 
 export function extractExcerptHtml(markdownSource: string, fallback: string, maximum = 240): string {
-  const blockTokens = markdown.parse(markdownSource, {});
-  const safeParagraph = paragraphChildren(blockTokens);
-  if (safeParagraph !== undefined) {
-    // A second tokenization only identifies raw HTML token boundaries. Rendering still uses the
-    // html:false parser/renderer, while script/style bodies and all raw tags are dropped structurally.
-    const detectedParagraph = paragraphChildren(htmlDetector.parse(markdownSource, {}));
-    if (detectedParagraph === undefined) return `<p>${escapeHtml(fallback)}</p>`;
-    const sourceTokens = withoutRawHtml(detectedParagraph);
+  const safeParagraphs = paragraphs(markdown.parse(markdownSource, {}));
+  // A second tokenization only identifies raw HTML token boundaries. Source ranges align it with
+  // the html:false parse, while rendering remains on the html:false parser/renderer.
+  const detectedByRange = new Map(
+    paragraphs(htmlDetector.parse(markdownSource, {}))
+      .map((paragraph) => [paragraph.sourceRange, paragraph.children]),
+  );
+  for (const safeParagraph of safeParagraphs) {
+    const detected = detectedByRange.get(safeParagraph.sourceRange);
+    if (detected === undefined) continue;
+    const sourceTokens = withoutRawHtml(detected);
     const retained = truncateTokens(sourceTokens, maximum);
     if (retained.map(visibleTokenText).join('').trim() !== '') {
       const rendered = `<p>${markdown.renderer.renderInline(retained, markdown.options, {})}</p>`;

@@ -33,6 +33,11 @@ describe('README excerpts', () => {
       .toBe('First paragraph.');
   });
 
+  it('continues past a paragraph that is empty after images are removed', () => {
+    expect(visibleText(extractExcerptHtml('![x](a)\n\nReal paragraph.', 'Fallback')))
+      .toBe('Real paragraph.');
+  });
+
   it('falls back to an escaped summary when there is no paragraph', () => {
     expect(extractExcerptHtml('# Heading\n\n- only a list', '<b>fallback</b>')).toBe('<p>&lt;b&gt;fallback&lt;/b&gt;</p>');
   });
