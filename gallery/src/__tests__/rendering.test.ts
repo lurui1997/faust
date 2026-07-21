@@ -73,6 +73,11 @@ describe('static gallery rendering', () => {
       {},
       '# Plain\n\nA plain excerpt.',
     );
+    await writeProject(
+      'archived-cli',
+      { title: 'Archived CLI', status: 'archived', type: 'cli' },
+      '# Archived\n\nAn archived excerpt.',
+    );
 
     process.env.FAUST_BASE = '/test-base';
     process.env.FAUST_SITE = 'https://example.test';
@@ -93,6 +98,17 @@ describe('static gallery rendering', () => {
     expect(home).toContain('2 projects');
     expect(home).toContain('href="/test-base/projects/covered/"');
     expect(home).toContain('href="/test-base/projects/plain/"');
+    expect(home).toMatch(/<form[^>]*method="get"[^>]*data-project-filters/);
+    expect(home).toMatch(/<label for="project-type"[^>]*>Type<\/label>/);
+    expect(home).toMatch(/<select id="project-type" name="type"/);
+    expect(home).toMatch(/<option value="all" selected[^>]*>All types<\/option>/);
+    expect(home).toMatch(/<label for="project-status"[^>]*>Status<\/label>/);
+    expect(home).toMatch(/<option value="active" selected[^>]*>Active<\/option>/);
+    expect(home).toMatch(/data-type="web" data-status="building"/);
+    expect(home).toMatch(/data-type="cli" data-status="archived" hidden/);
+    expect(home).toMatch(/aria-live="polite" aria-atomic="true"[^>]*>2 projects/);
+    expect(home).toMatch(/data-filter-empty hidden/);
+    expect(home).toMatch(/<button type="button" data-filter-reset[^>]*>Reset filters<\/button>/);
     expect(covered).toContain('href="https://demo.example/covered"');
     expect(covered).toContain('href="https://code.example/covered"');
     expect(covered).toContain('src="/test-base/project-assets/covered/cover.png"');
@@ -104,5 +120,33 @@ describe('static gallery rendering', () => {
     for (const html of [covered, plain]) {
       expect(html).not.toMatch(/<script|javascript:|\son[a-z]+\s*=|<img src=x/i);
     }
+  });
+
+});
+
+describe('filter URL state', () => {
+  it('accepts valid query values and safely falls back from invalid values', async () => {
+    const { readFilterState } = await import('../scripts/filters.js');
+    const valid = readFilterState(new URLSearchParams('type=web&status=shipped'), ['cli', 'web']);
+    const invalid = readFilterState(new URLSearchParams('type=bogus&status=deleted'), ['cli', 'web']);
+
+    expect(valid).toEqual({ type: 'web', status: 'shipped' });
+    expect(invalid).toEqual({ type: 'all', status: 'active' });
+  });
+
+  it('serializes only non-default filters beneath the current base path', async () => {
+    const { filterUrl } = await import('../scripts/filters.js');
+
+    expect(filterUrl('/nested/gallery/', { type: 'all', status: 'active' })).toBe('/nested/gallery/');
+    expect(filterUrl('/nested/gallery/', { type: 'web', status: 'all' }))
+      .toBe('/nested/gallery/?type=web&status=all');
+  });
+
+  it('distinguishes an empty gallery from a filter with no matches', async () => {
+    const { showNoMatches } = await import('../scripts/filters.js');
+
+    expect(showNoMatches(0, 0)).toBe(false);
+    expect(showNoMatches(0, 3)).toBe(true);
+    expect(showNoMatches(1, 3)).toBe(false);
   });
 });

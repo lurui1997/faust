@@ -1,0 +1,40 @@
+---
+type Props = { projectTypes: string[] };
+const { projectTypes } = Astro.props;
+---
+
+<form class="filters" method="get" data-project-filters>
+  <div>
+    <label for="project-type">Type</label>
+    <select id="project-type" name="type">
+      <option value="all" selected>All types</option>
+      {projectTypes.map((type) => <option value={type}>{type}</option>)}
+    </select>
+  </div>
+  <div>
+    <label for="project-status">Status</label>
+    <select id="project-status" name="status">
+      <option value="active" selected>Active</option>
+      <option value="all">All statuses</option>
+      <option value="idea">Idea</option>
+      <option value="building">Building</option>
+      <option value="shipped">Shipped</option>
+      <option value="archived">Archived</option>
+    </select>
+  </div>
+  <button type="submit">Apply filters</button>
+</form>
+
+<script>
+  import { initializeProjectFilters } from '../scripts/filters.js';
+
+  initializeProjectFilters();
+</script>
+
+<style>
+  .filters { display: flex; justify-content: flex-start; gap: 1rem; align-items: end; padding-block: 1.5rem; border-block: 1px solid #b9beba; }
+  .filters div { display: grid; gap: .35rem; }
+  select, button { font: inherit; background: transparent; border: 1px solid #8e9693; padding: .4rem .5rem; }
+  select { padding-right: 2rem; }
+  @media (max-width: 36rem) { .filters { align-items: stretch; flex-direction: column; } }
+</style>
