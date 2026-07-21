@@ -99,10 +99,12 @@ describe('static gallery rendering', () => {
     expect(home).toContain('href="/test-base/projects/covered/"');
     expect(home).toContain('href="/test-base/projects/plain/"');
     expect(home).toMatch(/<form[^>]*method="get"[^>]*data-project-filters/);
-    expect(home).toMatch(/<label for="project-type"[^>]*>Type<\/label>/);
-    expect(home).toMatch(/<select id="project-type" name="type"/);
+    expect(home).toMatch(/<noscript[^>]*>Interactive filtering requires JavaScript\. The default active projects remain readable\.<\/noscript>/);
+    expect(home).toMatch(/<button type="submit"[^>]*data-filter-apply[^>]*hidden/);
+    expect(home).toMatch(/<label for="home-projects-type"[^>]*>Type<\/label>/);
+    expect(home).toMatch(/<select id="home-projects-type" name="type"/);
     expect(home).toMatch(/<option value="all" selected[^>]*>All types<\/option>/);
-    expect(home).toMatch(/<label for="project-status"[^>]*>Status<\/label>/);
+    expect(home).toMatch(/<label for="home-projects-status"[^>]*>Status<\/label>/);
     expect(home).toMatch(/<option value="active" selected[^>]*>Active<\/option>/);
     expect(home).toMatch(/data-type="web" data-status="building"/);
     expect(home).toMatch(/data-type="cli" data-status="archived" hidden/);

@@ -1,19 +1,22 @@
 ---
-type Props = { projectTypes: string[] };
-const { projectTypes } = Astro.props;
+type Props = { projectTypes: string[]; idPrefix: string };
+const { projectTypes, idPrefix } = Astro.props;
+const typeId = `${idPrefix}-type`;
+const statusId = `${idPrefix}-status`;
 ---
 
-<form class="filters" method="get" data-project-filters>
+<noscript set:html="Interactive filtering requires JavaScript. The default active projects remain readable."></noscript>
+<form class="filters" method="get" data-project-filters hidden>
   <div>
-    <label for="project-type">Type</label>
-    <select id="project-type" name="type">
+    <label for={typeId}>Type</label>
+    <select id={typeId} name="type">
       <option value="all" selected>All types</option>
       {projectTypes.map((type) => <option value={type}>{type}</option>)}
     </select>
   </div>
   <div>
-    <label for="project-status">Status</label>
-    <select id="project-status" name="status">
+    <label for={statusId}>Status</label>
+    <select id={statusId} name="status">
       <option value="active" selected>Active</option>
       <option value="all">All statuses</option>
       <option value="idea">Idea</option>
@@ -22,7 +25,7 @@ const { projectTypes } = Astro.props;
       <option value="archived">Archived</option>
     </select>
   </div>
-  <button type="submit">Apply filters</button>
+  <button type="submit" data-filter-apply hidden>Apply filters</button>
 </form>
 
 <script>

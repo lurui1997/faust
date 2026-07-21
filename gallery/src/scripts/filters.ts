@@ -36,22 +36,30 @@ function matches(row: HTMLElement, filters: FilterState): boolean {
 }
 
 export function initializeProjectFilters(root: Document = document): void {
-  const form = root.querySelector<HTMLFormElement>('[data-project-filters]');
-  const index = root.querySelector<HTMLElement>('[data-project-index]');
-  if (form === null || index === null) return;
+  const indexes = root.querySelectorAll<HTMLElement>('[data-project-index]');
+  const initialParams = new URLSearchParams(window.location.search);
+  for (const index of indexes) initializeProjectIndex(index, initialParams);
+}
+
+function initializeProjectIndex(index: HTMLElement, initialParams: URLSearchParams): void {
+  const form = index.querySelector<HTMLFormElement>('[data-project-filters]');
+  if (form === null || form.dataset.filterEnhanced === 'true') return;
 
   const type = form.elements.namedItem('type');
   const status = form.elements.namedItem('status');
   const count = index.querySelector<HTMLElement>('[data-project-count]');
   const empty = index.querySelector<HTMLElement>('[data-filter-empty]');
   const reset = index.querySelector<HTMLButtonElement>('[data-filter-reset]');
-  const heading = index.querySelector<HTMLElement>('#projects-heading');
+  const heading = index.querySelector<HTMLElement>('[data-project-heading]');
   const rows = [...index.querySelectorAll<HTMLElement>('[data-project-row]')];
   if (!(type instanceof HTMLSelectElement) || !(status instanceof HTMLSelectElement)
     || count === null || empty === null || reset === null || heading === null) return;
 
+  form.dataset.filterEnhanced = 'true';
+  form.hidden = false;
+
   const projectTypes = [...type.options].map(({ value }) => value);
-  const initial = readFilterState(new URLSearchParams(window.location.search), projectTypes);
+  const initial = readFilterState(initialParams, projectTypes);
   type.value = initial.type;
   status.value = initial.status;
 
