@@ -14,6 +14,7 @@ vi.mock('../validate-projects.js', async () => {
 import { createProject, deriveSlug, renameNoReplace, runInteractiveCreator } from '../create-project.js';
 import { validateProjects } from '../validate-projects.js';
 import { copyRenderedTemplate } from '../lib/templates.js';
+import { createAtomicRenameNoReplaceAdapter, type NativeCommandRunner } from '../lib/rename-noreplace.js';
 import { cleanupRepositories, makeRepository } from './fixtures.js';
 
 afterEach(async () => {
@@ -29,6 +30,125 @@ const input = (root: string, template: 'blank' | 'web' | 'script' = 'blank') => 
   summary: 'Try it.',
   template,
   today: '2026-07-21',
+});
+
+const fakeNativeRunner = (nativeResult = { code: 0, stderr: '' }) => {
+  let compiles = 0;
+  const run: NativeCommandRunner = async (command, args) => {
+    if (command === '/test/cc') {
+      compiles += 1;
+      await writeFile(args.at(-1)!, 'fake executable');
+      return { code: 0, stderr: '' };
+    }
+    return nativeResult;
+  };
+  return { run, compiles: () => compiles };
+};
+
+it('compiles the native adapter once and reuses its validated cache', async () => {
+  const root = await makeRepository();
+  const sourcePath = join(root, 'helper.c');
+  await writeFile(sourcePath, 'source');
+  const fake = fakeNativeRunner();
+  const rename = createAtomicRenameNoReplaceAdapter({
+    platform: 'darwin', architecture: 'test', sourcePath,
+    cacheRoot: join(root, 'cache'), compilerPath: '/test/cc', run: fake.run,
+  });
+  await rename('one', 'two');
+  await rename('three', 'four');
+  expect(fake.compiles()).toBe(1);
+});
+
+it.each(['permissive mode', 'non-file'] as const)('refuses a reused executable with %s before execution', async (kind) => {
+  const root = await makeRepository();
+  const sourcePath = join(root, 'helper.c');
+  const cacheRoot = join(root, 'cache');
+  await writeFile(sourcePath, 'source');
+  const fake = fakeNativeRunner();
+  const rename = createAtomicRenameNoReplaceAdapter({ platform: 'darwin', sourcePath, cacheRoot, compilerPath: '/test/cc', run: fake.run });
+  await rename('one', 'two');
+  const executable = join(cacheRoot, (await readdir(cacheRoot)).find((name) => name.startsWith('rename-noreplace-'))!);
+  if (kind === 'permissive mode') await chmod(executable, 0o755);
+  else { await rm(executable); await mkdir(executable); }
+  await expect(rename('three', 'four')).rejects.toThrow(/trusted restrictive regular file/i);
+});
+
+it('safely converges simultaneous native-helper cache misses', async () => {
+  const root = await makeRepository();
+  const sourcePath = join(root, 'helper.c');
+  const cacheRoot = join(root, 'cache');
+  await writeFile(sourcePath, 'source');
+  const fake = fakeNativeRunner();
+  const options = { platform: 'linux', architecture: 'test', sourcePath, cacheRoot, compilerPath: '/test/cc', run: fake.run } as const;
+  const first = createAtomicRenameNoReplaceAdapter(options);
+  const second = createAtomicRenameNoReplaceAdapter(options);
+  await expect(Promise.all([first('a', 'b'), second('c', 'd')])).resolves.toEqual([undefined, undefined]);
+  expect((await readdir(cacheRoot)).filter((name) => name.startsWith('rename-noreplace-'))).toHaveLength(1);
+});
+
+it('reports missing and failing compilers actionably', async () => {
+  for (const run of [
+    async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); },
+    async () => ({ code: 2, stderr: 'compiler failed' }),
+  ] satisfies NativeCommandRunner[]) {
+    const root = await makeRepository();
+    const sourcePath = join(root, 'helper.c');
+    await writeFile(sourcePath, 'source');
+    const rename = createAtomicRenameNoReplaceAdapter({ platform: 'linux', sourcePath, cacheRoot: join(root, 'cache'), compilerPath: '/missing/cc', run });
+    await expect(rename('a', 'b')).rejects.toThrow(/compiler|C compiler/i);
+  }
+});
+
+it('rejects unsupported platforms and untrusted cache mode or ownership', async () => {
+  const unsupportedRoot = await makeRepository();
+  const unsupportedSource = join(unsupportedRoot, 'helper.c');
+  await writeFile(unsupportedSource, 'source');
+  await expect(createAtomicRenameNoReplaceAdapter({ platform: 'win32', sourcePath: unsupportedSource })('a', 'b')).rejects.toThrow(/unsupported/i);
+
+  for (const kind of ['mode', 'owner'] as const) {
+    const root = await makeRepository();
+    const sourcePath = join(root, 'helper.c');
+    const cacheRoot = join(root, 'cache');
+    await writeFile(sourcePath, 'source');
+    await mkdir(cacheRoot);
+    if (kind === 'mode') await chmod(cacheRoot, 0o777);
+    const uid = typeof process.getuid === 'function' ? process.getuid() : 501;
+    const rename = createAtomicRenameNoReplaceAdapter({
+      platform: 'linux', sourcePath, cacheRoot,
+      uid: kind === 'owner' ? uid + 1 : uid,
+    });
+    await expect(rename('a', 'b')).rejects.toThrow(/private and trusted/i);
+  }
+});
+
+it.each([
+  [3, /already exists/i, 'EEXIST'],
+  [4, /kernel does not support/i, undefined],
+  [9, /helper exited 9/i, undefined],
+] as const)('maps native helper exit %i stably', async (code, message, errorCode) => {
+  const root = await makeRepository();
+  const sourcePath = join(root, 'helper.c');
+  await writeFile(sourcePath, 'source');
+  const fake = fakeNativeRunner({ code, stderr: '' });
+  const rename = createAtomicRenameNoReplaceAdapter({ platform: 'linux', sourcePath, cacheRoot: join(root, 'cache'), compilerPath: '/test/cc', run: fake.run });
+  try {
+    await rename('a', 'b');
+    expect.fail('expected native mapping failure');
+  } catch (error) {
+    expect((error as Error).message).toMatch(message);
+    expect((error as NodeJS.ErrnoException).code).toBe(errorCode);
+  }
+});
+
+it('runs a real freshly compiled native no-replace helper on this host', async () => {
+  const root = await makeRepository();
+  const source = join(root, 'source');
+  const destination = join(root, 'destination');
+  await mkdir(source);
+  await writeFile(join(source, 'sentinel'), 'native');
+  const rename = createAtomicRenameNoReplaceAdapter({ cacheRoot: join(root, 'native-cache') });
+  await rename(source, destination);
+  await expect(readFile(join(destination, 'sentinel'), 'utf8')).resolves.toBe('native');
 });
 
 describe.each(['blank', 'web', 'script'] as const)('%s template', (template) => {
