@@ -3,7 +3,10 @@ import addFormatsImport from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
 
 import jsonSchema from '../../project.schema.json' with { type: 'json' };
-import { ProjectMetadataSchema } from '../project-schema.js';
+import {
+  ProjectMetadataSchema,
+  registerProjectSchemaAjvExtensions,
+} from '../project-schema.js';
 
 const valid = {
   title: 'Semantic Search Playground',
@@ -22,15 +25,6 @@ const valid = {
 
 type Case = readonly [label: string, value: unknown, expected: boolean];
 const addFormats = addFormatsImport as unknown as typeof import('ajv-formats').default;
-
-const isAbsoluteWebUrl = (value: string, protocols: readonly string[]): boolean => {
-  try {
-    const url = new URL(value);
-    return protocols.includes(url.protocol) && url.hostname.length > 0;
-  } catch {
-    return false;
-  }
-};
 
 const urlWithCodePointLength = (length: number): string => {
   const prefix = 'https://example.com/';
@@ -122,7 +116,7 @@ const cases: Case[] = [
   ['accepts an HTTPS demo', withField('demo', 'https://example.com/demo?q=1'), true],
   ['accepts an IDN demo host', withField('demo', 'https://例え.テスト/a'), true],
   ['accepts an IPv6 demo host', withField('demo', 'http://[2001:db8::1]/demo'), true],
-  ['accepts user information in a demo URL', withField('demo', 'http://user:pass@example.com/demo'), true],
+  ['rejects user information in a demo URL', withField('demo', 'http://user:pass@example.com/demo'), false],
   ['accepts a high valid demo port', withField('demo', 'http://example.com:65535/demo'), true],
   ['accepts a 2048-code-point demo', withField('demo', urlWithCodePointLength(2048)), true],
   ['rejects a 2049-code-point demo', withField('demo', urlWithCodePointLength(2049)), false],
@@ -138,7 +132,7 @@ const cases: Case[] = [
   ['accepts an HTTPS repository', withField('repository', 'https://github.com/example/project'), true],
   ['accepts an IDN repository host', withField('repository', 'https://例え.テスト/a'), true],
   ['accepts an IPv6 repository host', withField('repository', 'https://[2001:db8::1]/project'), true],
-  ['accepts user information in a repository URL', withField('repository', 'https://user:pass@example.com/project'), true],
+  ['rejects user information in a repository URL', withField('repository', 'https://user:pass@example.com/project'), false],
   ['accepts a high valid repository port', withField('repository', 'https://example.com:65535/project'), true],
   ['accepts a 2048-code-point repository', withField('repository', urlWithCodePointLength(2048)), true],
   ['rejects a 2049-code-point repository', withField('repository', urlWithCodePointLength(2049)), false],
@@ -177,21 +171,7 @@ const cases: Case[] = [
 describe('project metadata contract', () => {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
-  ajv.addFormat('absolute-http-url', {
-    type: 'string',
-    validate: (value: string) => isAbsoluteWebUrl(value, ['http:', 'https:']),
-  });
-  ajv.addFormat('absolute-https-url', {
-    type: 'string',
-    validate: (value: string) => isAbsoluteWebUrl(value, ['https:']),
-  });
-  ajv.addKeyword({
-    keyword: 'updatedAtNotBeforeCreatedAt',
-    schemaType: 'boolean',
-    type: 'object',
-    validate: (enabled: boolean, data: { createdAt?: string; updatedAt?: string }) =>
-      !enabled || !data.createdAt || !data.updatedAt || data.updatedAt >= data.createdAt,
-  });
+  registerProjectSchemaAjvExtensions(ajv);
   const validateJson = ajv.compile(jsonSchema);
 
   it.each(cases)('%s', (_label, value, expected) => {

@@ -1,9 +1,45 @@
 import { posix } from 'node:path';
 
+import type { Ajv2020 } from 'ajv/dist/2020.js';
 import { z } from 'zod';
 
 const kebabCase = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const hasAtMostCodePoints = (value: string, maximum: number) => Array.from(value).length <= maximum;
+
+const isAbsoluteWebUrl = (value: string, protocols: readonly string[]): boolean => {
+  try {
+    const url = new URL(value);
+    return (
+      protocols.includes(url.protocol) &&
+      url.hostname.length > 0 &&
+      url.username.length === 0 &&
+      url.password.length === 0
+    );
+  } catch {
+    return false;
+  }
+};
+
+/** Register every non-standard format and keyword required before compiling project.schema.json. */
+export const registerProjectSchemaAjvExtensions = (ajv: Ajv2020): Ajv2020 => {
+  ajv.addFormat('absolute-http-url', {
+    type: 'string',
+    validate: (value: string) => isAbsoluteWebUrl(value, ['http:', 'https:']),
+  });
+  ajv.addFormat('absolute-https-url', {
+    type: 'string',
+    validate: (value: string) => isAbsoluteWebUrl(value, ['https:']),
+  });
+  ajv.addKeyword({
+    keyword: 'updatedAtNotBeforeCreatedAt',
+    schemaType: 'boolean',
+    type: 'object',
+    validate: (enabled: boolean, data: { createdAt?: string; updatedAt?: string }) =>
+      !enabled || !data.createdAt || !data.updatedAt || data.updatedAt >= data.createdAt,
+  });
+
+  return ajv;
+};
 
 const isoDate = z
   .string()
@@ -32,14 +68,7 @@ const webUrl = (protocols: readonly string[]) =>
   z
     .string()
     .refine((value) => hasAtMostCodePoints(value, 2048), 'must contain at most 2048 characters')
-    .refine((value) => {
-      try {
-        const url = new URL(value);
-        return protocols.includes(url.protocol) && url.hostname.length > 0;
-      } catch {
-        return false;
-      }
-    }, `must use ${protocols.join(' or ')}`);
+    .refine((value) => isAbsoluteWebUrl(value, protocols), `must use ${protocols.join(' or ')} without credentials`);
 
 const slug = z.string().min(1).max(64).regex(kebabCase);
 const tag = z.string().min(1).max(32).regex(kebabCase);
