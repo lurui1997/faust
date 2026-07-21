@@ -32,10 +32,11 @@ const error = (
 const fieldForIssue = (issue: ZodIssue): string =>
   issue.path.length > 0 ? issue.path.map(String).join('.') : 'project.json';
 
-async function validateProject(
-  projectPath: string,
-  expectedDirectoryName: string,
-): Promise<{ result: ProjectValidationResult; metadata?: ProjectMetadata }> {
+export async function validateProjectAt(options: {
+  projectPath: string;
+  expectedDirectoryName: string;
+}): Promise<ProjectValidationResult> {
+  const { projectPath, expectedDirectoryName } = options;
   const errors: ValidationError[] = [];
   const metadataPath = join(projectPath, 'project.json');
   const readmePath = join(projectPath, 'README.md');
@@ -128,16 +129,20 @@ async function validateProject(
   }
 
   return errors.length === 0 && metadata !== undefined
-    ? { result: { ok: true, project: metadata }, metadata }
-    : { result: { ok: false, errors }, metadata };
+    ? { ok: true, project: metadata }
+    : { ok: false, errors };
 }
 
-export async function validateProjectAt(options: {
-  projectPath: string;
-  expectedDirectoryName: string;
-}): Promise<ProjectValidationResult> {
-  return (await validateProject(options.projectPath, options.expectedDirectoryName)).result;
-}
+const readDeclaredSlug = async (projectPath: string): Promise<string | undefined> => {
+  try {
+    const parsed = JSON.parse(await readFile(join(projectPath, 'project.json'), 'utf8')) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+    const slug = (parsed as Record<string, unknown>).slug;
+    return typeof slug === 'string' ? slug : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 export async function validateProjects(options: {
   root: string;
@@ -165,12 +170,17 @@ export async function validateProjects(options: {
   }
 
   for (const directory of directories) {
-    const validation = await validateProject(directory.path, directory.name);
-    if (validation.result.ok) projects.push(validation.result.project);
-    else errors.push(...validation.result.errors);
-    if (validation.metadata !== undefined) {
-      declarations.set(validation.metadata.slug, [
-        ...(declarations.get(validation.metadata.slug) ?? []),
+    const validation = await validateProjectAt({
+      projectPath: directory.path,
+      expectedDirectoryName: directory.name,
+    });
+    if (validation.ok) projects.push(validation.project);
+    else errors.push(...validation.errors);
+
+    const declaredSlug = await readDeclaredSlug(directory.path);
+    if (declaredSlug !== undefined) {
+      declarations.set(declaredSlug, [
+        ...(declarations.get(declaredSlug) ?? []),
         directory.name,
       ]);
     }

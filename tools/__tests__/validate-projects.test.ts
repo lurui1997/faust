@@ -107,6 +107,24 @@ describe('repository project validation', () => {
     }
   });
 
+  it('detects duplicate declarations even when another metadata field is invalid', async () => {
+    const root = await makeRepository([
+      {
+        dir: 'alpha',
+        metadata: { ...validProject, slug: 'shared', status: 'paused' },
+        readme: '# Alpha',
+      },
+      { dir: 'beta', metadata: { ...validProject, slug: 'shared' }, readme: '# Beta' },
+    ]);
+
+    const result = await validateProjects({ root });
+
+    expect(result).toMatchObject({ ok: false });
+    if (!result.ok) {
+      expect(result.errors.filter((item) => item.message.includes('duplicate slug'))).toHaveLength(2);
+    }
+  });
+
   it('reports a referenced cover that does not exist', async () => {
     const root = await makeRepository([
       {
