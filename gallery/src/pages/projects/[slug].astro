@@ -53,7 +53,7 @@ const { project } = Astro.props;
   .about { display: grid; gap: 1.5rem; padding-top: var(--space-2xl); }
   .about h2 { margin: 0; font-size: clamp(2rem, 5vw, 4rem); }
   .excerpt { max-width: 65ch; font-size: 1.0625rem; }
-  .excerpt :global(a) { overflow-wrap: anywhere; }
+  .excerpt :global(a) { display: inline-flex; align-items: center; min-block-size: 2.75rem; max-width: 100%; overflow-wrap: anywhere; }
   .project-actions { display: flex; flex-wrap: wrap; gap: .75rem 2rem; margin-top: var(--space-2xl); padding-top: 1.5rem; border-top: 1px solid var(--rule); }
   .project-actions a { display: inline-flex; align-items: center; min-height: 2.75rem; font-size: 1.125rem; }
   @media (min-width: 48.0625rem) {
