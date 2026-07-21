@@ -41,6 +41,8 @@ async function writeProject(
 }
 
 beforeEach(async () => {
+  process.env.FAUST_GITHUB_OWNER = 'lurui1997';
+  process.env.FAUST_GITHUB_BRANCH = 'main';
   const temporaryRoot = await realpath(tmpdir());
   fixtureRoot = await mkdtemp(join(temporaryRoot, 'faust-gallery-fixture-'));
   outputRoot = await mkdtemp(join(temporaryRoot, 'faust-gallery-output-'));
@@ -57,7 +59,9 @@ afterEach(async () => {
   await Promise.all([fixtureRoot, outputRoot].map((path) => rm(path, { recursive: true, force: true })));
   delete process.env.FAUST_BASE;
   delete process.env.FAUST_SITE;
+  delete process.env.FAUST_GITHUB_OWNER;
   delete process.env.FAUST_GITHUB_REPOSITORY;
+  delete process.env.FAUST_GITHUB_BRANCH;
   vi.resetModules();
 });
 
