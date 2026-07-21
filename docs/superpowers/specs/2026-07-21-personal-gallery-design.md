@@ -74,8 +74,8 @@ Every direct child of `projects/` must contain `project.json` and `README.md`. T
 - `createdAt` and `updatedAt`: ISO calendar dates. `updatedAt` must not precede `createdAt`.
 - `featured`: Boolean used for editorial emphasis, not a separate page section.
 - `demo`: Absolute HTTP(S) URL or `null`.
-- `repository`: `./` for a project in this repository, with absolute HTTP(S) URLs reserved for future externally hosted source.
-- `cover`: Project-relative image path or `null`.
+- `repository`: `./` for a project in this repository, or an absolute HTTPS URL for externally hosted source. HTTP and non-web URL schemes are rejected.
+- `cover`: Project-relative image path or `null`. The resolved path must remain inside the project directory; absolute paths and traversal segments such as `../` are rejected.
 
 Unknown fields are rejected so mistakes do not silently disappear from the gallery. A local JSON Schema and runtime validator define the contract. The schema is the source of truth for tooling and documentation examples.
 
@@ -124,7 +124,7 @@ Filters update the visible index without navigation and are reflected in URL que
 Each project receives a statically generated page at `/projects/<slug>/` with:
 
 - Title, summary, status, type, tags, and dates.
-- A short rendered excerpt from the project's README.
+- A short rendered excerpt from the project's README: the first non-empty paragraph after an optional leading H1, limited to 240 characters at the nearest word boundary. If no paragraph exists, the metadata summary is used.
 - The declared technology or context represented through tags.
 - A primary Demo action when `demo` exists.
 - A source action resolved from `repository`; `./` links to the project's directory on the configured GitHub repository.
