@@ -9,9 +9,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const galleryRoot = join(repositoryRoot, 'gallery');
+const deploymentEnvironmentKeys = [
+  'FAUST_GITHUB_OWNER',
+  'FAUST_GITHUB_REPOSITORY',
+  'FAUST_GITHUB_BRANCH',
+  'FAUST_SITE',
+  'FAUST_BASE',
+] as const;
+type DeploymentEnvironment = Record<(typeof deploymentEnvironmentKeys)[number], string | undefined>;
+
+function snapshotDeploymentEnvironment(): DeploymentEnvironment {
+  return Object.fromEntries(deploymentEnvironmentKeys.map((key) => [key, process.env[key]])) as DeploymentEnvironment;
+}
+
+function restoreDeploymentEnvironment(snapshot: DeploymentEnvironment): void {
+  for (const key of deploymentEnvironmentKeys) {
+    const value = snapshot[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
 
 let fixtureRoot = '';
 let outputRoot = '';
+let originalDeploymentEnvironment: DeploymentEnvironment;
 
 async function writeProject(
   slug: string,
@@ -41,6 +62,7 @@ async function writeProject(
 }
 
 beforeEach(async () => {
+  originalDeploymentEnvironment = snapshotDeploymentEnvironment();
   process.env.FAUST_GITHUB_OWNER = 'lurui1997';
   process.env.FAUST_GITHUB_BRANCH = 'main';
   const temporaryRoot = await realpath(tmpdir());
@@ -56,13 +78,12 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await Promise.all([fixtureRoot, outputRoot].map((path) => rm(path, { recursive: true, force: true })));
-  delete process.env.FAUST_BASE;
-  delete process.env.FAUST_SITE;
-  delete process.env.FAUST_GITHUB_OWNER;
-  delete process.env.FAUST_GITHUB_REPOSITORY;
-  delete process.env.FAUST_GITHUB_BRANCH;
-  vi.resetModules();
+  try {
+    await Promise.all([fixtureRoot, outputRoot].map((path) => rm(path, { recursive: true, force: true })));
+  } finally {
+    restoreDeploymentEnvironment(originalDeploymentEnvironment);
+    vi.resetModules();
+  }
 });
 
 describe('static gallery rendering', () => {
@@ -167,5 +188,20 @@ describe('filter URL state', () => {
     expect(showNoMatches(0, 0)).toBe(false);
     expect(showNoMatches(0, 3)).toBe(true);
     expect(showNoMatches(1, 3)).toBe(false);
+  });
+});
+
+describe('deployment environment isolation', () => {
+  it('restores inherited values and deletes only variables that were originally absent', () => {
+    process.env.FAUST_GITHUB_OWNER = 'inherited-owner';
+    delete process.env.FAUST_BASE;
+    const original = snapshotDeploymentEnvironment();
+
+    process.env.FAUST_GITHUB_OWNER = 'fixture-owner';
+    process.env.FAUST_BASE = '/fixture-base';
+    restoreDeploymentEnvironment(original);
+
+    expect(process.env.FAUST_GITHUB_OWNER).toBe('inherited-owner');
+    expect(process.env.FAUST_BASE).toBeUndefined();
   });
 });
