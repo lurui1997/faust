@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { copyFile, lstat, mkdir, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,6 +53,55 @@ type GenerateOptions = {
   writeIndex?: (path: string, contents: string) => Promise<void>;
 };
 
+type ExpectedCover = { source: string; destination: string; contents: Buffer };
+
+const expectedDirectories = (covers: ExpectedCover[]): Set<string> => {
+  const directories = new Set(['']);
+  for (const cover of covers) {
+    let directory = dirname(cover.destination);
+    while (directory !== '.') {
+      directories.add(directory);
+      const parent = dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
+    }
+  }
+  return directories;
+};
+
+const versionIsComplete = async (versionPath: string, covers: ExpectedCover[]): Promise<boolean> => {
+  const expectedFiles = new Map(covers.map((cover) => [cover.destination, cover.contents]));
+  const expectedDirs = expectedDirectories(covers);
+  const seenFiles = new Set<string>();
+  const seenDirs = new Set<string>(['']);
+  const visit = async (directory: string): Promise<boolean> => {
+    const entries = await readdir(join(versionPath, directory), { withFileTypes: true });
+    for (const entry of entries) {
+      const relativePath = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (!expectedDirs.has(relativePath)) return false;
+        seenDirs.add(relativePath);
+        if (!(await visit(relativePath))) return false;
+      } else if (entry.isFile()) {
+        const expected = expectedFiles.get(relativePath);
+        if (expected === undefined || !(await readFile(join(versionPath, relativePath))).equals(expected)) return false;
+        seenFiles.add(relativePath);
+      } else {
+        return false;
+      }
+    }
+    return true;
+  };
+  try {
+    if (!(await lstat(versionPath)).isDirectory()) return false;
+    return await visit('')
+      && seenFiles.size === expectedFiles.size
+      && seenDirs.size === expectedDirs.size;
+  } catch {
+    return false;
+  }
+};
+
 const atomicWrite = async (path: string, contents: string): Promise<void> => {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.tmp-${process.pid}-${Date.now()}`;
@@ -69,8 +118,18 @@ export async function generateProjectIndex(options: GenerateOptions): Promise<Ga
   const records = await buildProjectIndex(options.root);
   const publicPath = join(options.root, 'gallery', 'public');
   await mkdir(publicPath, { recursive: true });
+  const lockPath = join(publicPath, '.project-assets-generate.lock');
+  try {
+    await mkdir(lockPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error('Project asset generation is already running; wait for it to finish and retry.', { cause: error });
+    }
+    throw error;
+  }
+  try {
   const hash = createHash('sha256');
-  const covers: Array<{ source: string; destination: string; contents: Buffer }> = [];
+  const covers: ExpectedCover[] = [];
   for (const project of records) {
     if (project.cover === null) continue;
     const source = join(options.root, 'projects', project.slug, project.cover);
@@ -81,6 +140,7 @@ export async function generateProjectIndex(options: GenerateOptions): Promise<Ga
   if (covers.length === 0) hash.update('empty');
   const versionName = `.project-assets-${hash.digest('hex').slice(0, 16)}`;
   const versionPath = join(publicPath, versionName);
+  const stagingPath = await mkdtemp(join(publicPath, '.project-assets-stage-'));
   const pointerPath = join(publicPath, 'project-assets');
   const temporaryPointer = join(publicPath, `.project-assets-link-${process.pid}-${Date.now()}`);
   const copy = options.copyCover ?? copyFile;
@@ -90,21 +150,44 @@ export async function generateProjectIndex(options: GenerateOptions): Promise<Ga
   let swapped = false;
   let oldTarget: string | undefined;
   try {
-    oldTarget = await readlink(pointerPath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
-  try {
     try {
-      await lstat(versionPath);
+      oldTarget = await readlink(pointerPath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      await mkdir(versionPath, { recursive: true });
-      createdVersion = true;
-      for (const cover of covers) {
-        const destination = join(versionPath, cover.destination);
-        await mkdir(dirname(destination), { recursive: true });
-        await copy(cover.source, destination);
+    }
+    for (const cover of covers) {
+      const destination = join(stagingPath, cover.destination);
+      await mkdir(dirname(destination), { recursive: true });
+      await copy(cover.source, destination);
+    }
+    if (!(await versionIsComplete(stagingPath, covers))) {
+      throw new Error('Staged project covers failed completeness verification; the active asset version was preserved.');
+    }
+
+    let finalExists = false;
+    try {
+      finalExists = (await lstat(versionPath)).isDirectory();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (finalExists && await versionIsComplete(versionPath, covers)) {
+      await rm(stagingPath, { recursive: true, force: true });
+    } else {
+      if (finalExists) {
+        if (oldTarget !== undefined && resolve(publicPath, oldTarget) === versionPath) {
+          throw new Error(`Active asset version ${versionName} is incomplete; refusing to replace it non-atomically.`);
+        }
+        await rm(versionPath, { recursive: true, force: true });
+      }
+      try {
+        await rename(stagingPath, versionPath);
+        createdVersion = true;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (!['EEXIST', 'ENOTEMPTY'].includes(code ?? '') || !(await versionIsComplete(versionPath, covers))) {
+          throw error;
+        }
+        await rm(stagingPath, { recursive: true, force: true });
       }
     }
     try {
@@ -126,13 +209,14 @@ export async function generateProjectIndex(options: GenerateOptions): Promise<Ga
     try {
       const entries = await readdir(publicPath, { withFileTypes: true });
       await Promise.allSettled(entries
-        .filter((entry) => entry.isDirectory() && entry.name.startsWith('.project-assets-') && entry.name !== versionName)
+        .filter((entry) => entry.isDirectory() && /^\.project-assets-[0-9a-f]{16}$/u.test(entry.name) && entry.name !== versionName)
         .map((entry) => rm(join(publicPath, entry.name), { recursive: true, force: true })));
     } catch {
       // A later generation retries obsolete-version cleanup.
     }
   } catch (error) {
     await rm(temporaryPointer, { force: true });
+    await rm(stagingPath, { recursive: true, force: true });
     if (swapped) {
       if (oldTarget === undefined) {
         await rm(pointerPath, { force: true });
@@ -148,6 +232,9 @@ export async function generateProjectIndex(options: GenerateOptions): Promise<Ga
   }
   (options.write ?? console.log)(`Generated ${records.length} projects`);
   return records;
+  } finally {
+    await rm(lockPath, { recursive: true, force: true });
+  }
 }
 
 const invokedPath = process.argv[1] === undefined ? undefined : resolve(process.argv[1]);

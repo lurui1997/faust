@@ -1,4 +1,4 @@
-import { mkdir, readFile, readlink, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readlink, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -109,6 +109,33 @@ describe('project index generation', () => {
     expect(secondTarget).not.toBe(firstTarget);
     await expect(stat(join(publicPath, firstTarget))).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(readFile(join(publicPath, secondTarget, 'first/cover.png'), 'utf8')).resolves.toBe('changed');
+  });
+
+  it('rebuilds an incomplete matching immutable version before publishing it', async () => {
+    const root = await makeRepository([{ dir: 'first', metadata: { ...validProject, slug: 'first', cover: 'cover.png' }, readme: 'One.', cover: 'cover.png' }]);
+    await generateProjectIndex({ root });
+    const publicPath = join(root, 'gallery/public');
+    const versionTarget = await readlink(join(publicPath, 'project-assets'));
+    await rm(join(publicPath, 'project-assets'));
+    await rm(join(publicPath, versionTarget, 'first/cover.png'));
+
+    await generateProjectIndex({ root });
+
+    expect(await readlink(join(publicPath, 'project-assets'))).toBe(versionTarget);
+    await expect(readFile(join(publicPath, versionTarget, 'first/cover.png'), 'utf8')).resolves.toBe('image');
+  });
+
+  it('rejects replacing an incomplete active version reached through an equivalent relative target', async () => {
+    const root = await makeRepository([{ dir: 'first', metadata: { ...validProject, slug: 'first', cover: 'cover.png' }, readme: 'One.', cover: 'cover.png' }]);
+    await generateProjectIndex({ root });
+    const publicPath = join(root, 'gallery/public');
+    const versionTarget = await readlink(join(publicPath, 'project-assets'));
+    await rm(join(publicPath, 'project-assets'));
+    await symlink(`./${versionTarget}`, join(publicPath, 'project-assets'));
+    await rm(join(publicPath, versionTarget, 'first/cover.png'));
+
+    await expect(generateProjectIndex({ root })).rejects.toThrow(/active asset version.*incomplete/i);
+    expect(await readlink(join(publicPath, 'project-assets'))).toBe(`./${versionTarget}`);
   });
 
   it('preserves the active version when copying a new cover fails', async () => {
