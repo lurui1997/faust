@@ -10,7 +10,7 @@
     "dev": "pnpm validate && pnpm generate && astro dev --root gallery",
     "build": "pnpm validate && pnpm generate && astro check --root gallery && astro build --root gallery",
     "test": "vitest run",
-    "check": "pnpm validate && pnpm test && pnpm build",
+    "check": "pnpm validate && pnpm generate && pnpm test && astro check --root gallery && astro build --root gallery",
     "create:project": "tsx tools/create-project.ts",
     "list:projects": "tsx tools/list-projects.ts"
   },
