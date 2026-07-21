@@ -18,6 +18,11 @@ export type CreateProjectInput = {
   templateRoot?: string;
 };
 
+export type CreateProjectDependencies = {
+  /** Test/observability seam invoked while this creator exclusively owns the slug lock. */
+  afterPublicationLock?: () => Promise<void>;
+};
+
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function deriveSlug(title: string): string {
@@ -64,7 +69,10 @@ export async function renameNoReplace(
   }
 }
 
-export async function createProject(input: CreateProjectInput): Promise<{ path: string; metadata: ProjectMetadata }> {
+export async function createProject(
+  input: CreateProjectInput,
+  dependencies: CreateProjectDependencies = {},
+): Promise<{ path: string; metadata: ProjectMetadata }> {
   const root = resolve(input.root);
   const projectsDirectory = join(root, 'projects');
   await mkdir(projectsDirectory, { recursive: true });
@@ -102,7 +110,7 @@ export async function createProject(input: CreateProjectInput): Promise<{ path: 
     await writeFile(join(staging, 'project.json'), `${JSON.stringify(metadata, null, 2)}\n`, { mode: 0o644, flag: 'wx' });
     const validation = await validateProjectAt({ projectPath: staging, expectedDirectoryName: slug });
     if (!validation.ok) throw new Error(`Created project failed validation: ${validation.errors.map((error) => error.message).join('; ')}`);
-    await renameNoReplace(staging, final);
+    await renameNoReplace(staging, final, { afterLock: dependencies.afterPublicationLock });
     return { path: final, metadata };
   } finally {
     await rm(staging, { recursive: true, force: true });

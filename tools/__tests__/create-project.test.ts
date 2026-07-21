@@ -177,25 +177,23 @@ it('rejects a destination created after locking and preserves its contents', asy
   expect((await readdir(join(root, 'projects'))).filter((name) => name.includes('.lock'))).toEqual([]);
 });
 
-it('holds the exclusive slug lock so a second publisher cannot replace the winner', async () => {
+it('holds the exclusive slug lock across full creators so a second creator cannot replace the winner', async () => {
   const root = await makeRepository();
-  const first = join(root, 'projects/.my-idea.stage-first');
-  const second = join(root, 'projects/.my-idea.stage-second');
-  const final = join(root, 'projects/my-idea');
-  await mkdir(first);
-  await mkdir(second);
-  await writeFile(join(first, 'identity'), 'first');
-  await writeFile(join(second, 'identity'), 'second');
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   let locked!: () => void;
   const hasLocked = new Promise<void>((resolve) => { locked = resolve; });
-  const winner = renameNoReplace(first, final, { afterLock: async () => { locked(); await gate; } });
+  const winner = createProject(
+    { ...input(root), summary: 'first winner' },
+    { afterPublicationLock: async () => { locked(); await gate; } },
+  );
   await hasLocked;
-  await expect(renameNoReplace(second, final)).rejects.toThrow(/being created/i);
+  await expect(createProject({ ...input(root), summary: 'second loser' })).rejects.toThrow(/being created/i);
   release();
   await winner;
 
-  await expect(readFile(join(final, 'identity'), 'utf8')).resolves.toBe('first');
-  await expect(readFile(join(second, 'identity'), 'utf8')).resolves.toBe('second');
+  const final = join(root, 'projects/my-idea');
+  const metadata = JSON.parse(await readFile(join(final, 'project.json'), 'utf8'));
+  expect(metadata.summary).toBe('first winner');
+  expect((await readdir(join(root, 'projects'))).filter((name) => name.includes('.stage-') || name.includes('.lock'))).toEqual([]);
 });
