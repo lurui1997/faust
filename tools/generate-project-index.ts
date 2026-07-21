@@ -118,16 +118,15 @@ export async function generateProjectIndex(options: GenerateOptions): Promise<Ga
   const records = await buildProjectIndex(options.root);
   const publicPath = join(options.root, 'gallery', 'public');
   await mkdir(publicPath, { recursive: true });
-  const lockPath = join(publicPath, '.project-assets-generate.lock');
-  try {
-    await mkdir(lockPath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new Error('Project asset generation is already running; wait for it to finish and retry.', { cause: error });
-    }
-    throw error;
-  }
-  try {
+  // Generation is intentionally serialized by the caller. Recover artifacts left by an
+  // interrupted prior run, but match only names owned by this generator.
+  const startupEntries = await readdir(publicPath, { withFileTypes: true });
+  await Promise.all(startupEntries
+    .filter((entry) => (
+      entry.name === '.project-assets-generate.lock'
+      || (entry.isDirectory() && /^\.project-assets-stage-[A-Za-z0-9]{6}$/u.test(entry.name))
+    ))
+    .map((entry) => rm(join(publicPath, entry.name), { recursive: true, force: true })));
   const hash = createHash('sha256');
   const covers: ExpectedCover[] = [];
   for (const project of records) {
@@ -232,9 +231,6 @@ export async function generateProjectIndex(options: GenerateOptions): Promise<Ga
   }
   (options.write ?? console.log)(`Generated ${records.length} projects`);
   return records;
-  } finally {
-    await rm(lockPath, { recursive: true, force: true });
-  }
 }
 
 const invokedPath = process.argv[1] === undefined ? undefined : resolve(process.argv[1]);

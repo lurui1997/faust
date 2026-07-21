@@ -96,6 +96,24 @@ describe('project index generation', () => {
     expect(lines).toEqual(['Generated 0 projects']);
   });
 
+  it('cleans a legacy lock and abandoned known staging directory without touching similar names', async () => {
+    const root = await makeRepository();
+    const publicPath = join(root, 'gallery/public');
+    const legacyLock = join(publicPath, '.project-assets-generate.lock');
+    const abandonedStage = join(publicPath, '.project-assets-stage-abc123');
+    const unrelated = join(publicPath, '.project-assets-stage-important');
+    await mkdir(legacyLock, { recursive: true });
+    await mkdir(abandonedStage);
+    await writeFile(join(abandonedStage, 'partial'), 'partial');
+    await mkdir(unrelated);
+
+    await generateProjectIndex({ root });
+
+    await expect(stat(legacyLock)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(abandonedStage)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(unrelated)).resolves.toMatchObject({ isDirectory: expect.any(Function) });
+  });
+
   it('removes stale immutable cover versions after a successful swap', async () => {
     const root = await makeRepository([{ dir: 'first', metadata: { ...validProject, slug: 'first', cover: 'cover.png' }, readme: 'One.', cover: 'cover.png' }]);
     await generateProjectIndex({ root });
