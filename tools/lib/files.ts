@@ -28,5 +28,10 @@ export async function realPathIsWithin(parentPath: string, candidatePath: string
 }
 
 export async function isRegularFileWithin(parentPath: string, candidatePath: string): Promise<boolean> {
+  // Threat model: repository tools run against a trusted, serialized local worktree. The
+  // realpath/stat pair prevents accidental and pre-existing symlink escapes, but does not
+  // claim safety against a hostile process swapping paths concurrently between these calls.
+  // Consumers must preserve that assumption rather than treating this as an openat-style
+  // race-proof sandbox boundary.
   return (await realPathIsWithin(parentPath, candidatePath)) && (await stat(candidatePath)).isFile();
 }

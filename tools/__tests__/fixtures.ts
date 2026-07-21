@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -25,8 +25,16 @@ export type FixtureProject = {
   cover?: string;
 };
 
+const repositoryRoots = new Set<string>();
+
+export async function cleanupRepositories(): Promise<void> {
+  await Promise.all([...repositoryRoots].map((root) => rm(root, { recursive: true, force: true })));
+  repositoryRoots.clear();
+}
+
 export async function makeRepository(projects: FixtureProject[] = []): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'faust-test-'));
+  repositoryRoots.add(root);
   await mkdir(join(root, 'projects'));
 
   for (const project of projects) {

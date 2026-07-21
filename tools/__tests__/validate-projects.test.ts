@@ -1,7 +1,19 @@
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const fsMock = vi.hoisted(() => ({
+  actualReadFile: undefined as undefined | ((...args: any[]) => Promise<any>),
+  readFile: vi.fn(),
+}));
+
+vi.mock('node:fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+  fsMock.actualReadFile = actual.readFile as (...args: any[]) => Promise<any>;
+  fsMock.readFile.mockImplementation(fsMock.actualReadFile);
+  return { ...actual, readFile: fsMock.readFile };
+});
 
 import {
   formatErrors,
@@ -9,7 +21,18 @@ import {
   validateProjectAt,
   validateProjects,
 } from '../validate-projects.js';
-import { makeRepository, validProject, writeValidProject } from './fixtures.js';
+import {
+  cleanupRepositories,
+  makeRepository,
+  validProject,
+  writeValidProject,
+} from './fixtures.js';
+
+afterEach(async () => {
+  fsMock.readFile.mockReset();
+  fsMock.readFile.mockImplementation(fsMock.actualReadFile!);
+  await cleanupRepositories();
+});
 
 describe('repository project validation', () => {
   it('accepts an empty projects directory', async () => {
@@ -125,6 +148,67 @@ describe('repository project validation', () => {
     }
   });
 
+  it('checks duplicates against all projects when only one project is validated', async () => {
+    const root = await makeRepository([
+      { dir: 'shared', metadata: { ...validProject, slug: 'shared' }, readme: '# Shared' },
+      {
+        dir: 'beta',
+        metadata: { ...validProject, slug: 'shared', status: 'paused' },
+        readme: '# Beta',
+      },
+    ]);
+
+    const result = await validateProjects({ root, only: 'shared' });
+
+    expect(result).toMatchObject({ ok: false });
+    if (!result.ok) {
+      expect(result.errors).toEqual([
+        expect.objectContaining({ project: 'shared', field: 'slug', message: expect.stringContaining('beta') }),
+      ]);
+      expect(result.errors.some((item) => item.project === 'beta' && item.field === 'status')).toBe(false);
+    }
+  });
+
+  it('rejects project.json when it is a symlink outside the project', async () => {
+    const root = await makeRepository([{ dir: 'my-idea', readme: '# My Idea' }]);
+    await writeFile(join(root, 'outside.json'), JSON.stringify(validProject));
+    await symlink(join(root, 'outside.json'), join(root, 'projects', 'my-idea', 'project.json'));
+
+    const result = await validateProjects({ root });
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [expect.objectContaining({ project: 'my-idea', field: 'project.json' })],
+    });
+  });
+
+  it('uses one project.json snapshot even if the file changes after that read', async () => {
+    const root = await makeRepository([
+      { dir: 'alpha', metadata: { ...validProject, slug: 'shared' }, readme: '# Alpha' },
+      { dir: 'beta', metadata: { ...validProject, slug: 'shared' }, readme: '# Beta' },
+    ]);
+    const alphaMetadata = join(root, 'projects', 'alpha', 'project.json');
+    let alphaReads = 0;
+    fsMock.readFile.mockImplementation(async (path, options) => {
+      const contents = await fsMock.actualReadFile!(path, options);
+      if (String(path) === alphaMetadata) {
+        alphaReads += 1;
+        if (alphaReads === 1) {
+          await writeFile(alphaMetadata, JSON.stringify({ ...validProject, slug: 'changed' }));
+        }
+      }
+      return contents;
+    });
+
+    const result = await validateProjects({ root });
+
+    expect(alphaReads).toBe(1);
+    expect(result).toMatchObject({ ok: false });
+    if (!result.ok) {
+      expect(result.errors.filter((item) => item.message.includes('duplicate slug'))).toHaveLength(2);
+    }
+  });
+
   it('reports a referenced cover that does not exist', async () => {
     const root = await makeRepository([
       {
@@ -233,8 +317,8 @@ describe('validateProjectAt', () => {
     const projectPath = join(root, 'projects', '.my-idea.stage-abc123');
     await writeValidProject(projectPath);
 
-    await expect(validateProjectAt({ projectPath, expectedDirectoryName: 'my-idea' }))
-      .resolves.toMatchObject({ ok: true, project: { slug: 'my-idea' } });
+    const validResult = await validateProjectAt({ projectPath, expectedDirectoryName: 'my-idea' });
+    expect(validResult).toEqual({ ok: true, project: validProject });
     await expect(validateProjectAt({ projectPath, expectedDirectoryName: 'different-name' }))
       .resolves.toMatchObject({ ok: false, errors: [expect.objectContaining({ field: 'slug' })] });
   });

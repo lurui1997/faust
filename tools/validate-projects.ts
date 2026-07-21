@@ -32,24 +32,53 @@ const error = (
 const fieldForIssue = (issue: ZodIssue): string =>
   issue.path.length > 0 ? issue.path.map(String).join('.') : 'project.json';
 
+type MetadataSnapshot = {
+  parsedJson?: unknown;
+  declaredSlug?: string;
+  fileError?: true;
+  jsonError?: true;
+};
+
+const declarationByResult = new WeakMap<ProjectValidationResult, string>();
+
+const readMetadataSnapshot = async (projectPath: string): Promise<MetadataSnapshot> => {
+  const metadataPath = join(projectPath, 'project.json');
+  try {
+    if (!(await isRegularFileWithin(projectPath, metadataPath))) return { fileError: true };
+    // One read defines the snapshot used for both schema validation and duplicate detection.
+    const rawMetadata = await readFile(metadataPath, 'utf8');
+    try {
+      const parsedJson = JSON.parse(rawMetadata) as unknown;
+      const declaredSlug = (
+        typeof parsedJson === 'object'
+        && parsedJson !== null
+        && !Array.isArray(parsedJson)
+        && typeof (parsedJson as Record<string, unknown>).slug === 'string'
+      ) ? (parsedJson as Record<string, string>).slug : undefined;
+      return { parsedJson, declaredSlug };
+    } catch {
+      return { jsonError: true };
+    }
+  } catch {
+    return { fileError: true };
+  }
+};
+
 export async function validateProjectAt(options: {
   projectPath: string;
   expectedDirectoryName: string;
 }): Promise<ProjectValidationResult> {
   const { projectPath, expectedDirectoryName } = options;
   const errors: ValidationError[] = [];
-  const metadataPath = join(projectPath, 'project.json');
   const readmePath = join(projectPath, 'README.md');
-  let rawMetadata: string | undefined;
+  const snapshot = await readMetadataSnapshot(projectPath);
 
-  try {
-    rawMetadata = await readFile(metadataPath, 'utf8');
-  } catch {
+  if (snapshot.fileError) {
     errors.push(error(
       expectedDirectoryName,
       'project.json',
-      'required metadata file is missing or unreadable',
-      'create project.json with every required metadata field',
+      'required metadata file is missing, unreadable, or outside the project directory',
+      'create project.json as a regular file inside this project directory',
     ));
   }
 
@@ -64,23 +93,18 @@ export async function validateProjectAt(options: {
     ));
   }
 
-  let parsedJson: unknown;
-  if (rawMetadata !== undefined) {
-    try {
-      parsedJson = JSON.parse(rawMetadata) as unknown;
-    } catch {
-      errors.push(error(
-        expectedDirectoryName,
-        'project.json',
-        'metadata is malformed JSON',
-        'replace project.json with valid JSON',
-      ));
-    }
+  if (snapshot.jsonError) {
+    errors.push(error(
+      expectedDirectoryName,
+      'project.json',
+      'metadata is malformed JSON',
+      'replace project.json with valid JSON',
+    ));
   }
 
   let metadata: ProjectMetadata | undefined;
-  if (parsedJson !== undefined) {
-    const parsed = ProjectMetadataSchema.safeParse(parsedJson);
+  if (snapshot.parsedJson !== undefined) {
+    const parsed = ProjectMetadataSchema.safeParse(snapshot.parsedJson);
     if (parsed.success) {
       metadata = parsed.data;
     } else {
@@ -128,21 +152,12 @@ export async function validateProjectAt(options: {
     }
   }
 
-  return errors.length === 0 && metadata !== undefined
+  const result: ProjectValidationResult = errors.length === 0 && metadata !== undefined
     ? { ok: true, project: metadata }
     : { ok: false, errors };
+  if (snapshot.declaredSlug !== undefined) declarationByResult.set(result, snapshot.declaredSlug);
+  return result;
 }
-
-const readDeclaredSlug = async (projectPath: string): Promise<string | undefined> => {
-  try {
-    const parsed = JSON.parse(await readFile(join(projectPath, 'project.json'), 'utf8')) as unknown;
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
-    const slug = (parsed as Record<string, unknown>).slug;
-    return typeof slug === 'string' ? slug : undefined;
-  } catch {
-    return undefined;
-  }
-};
 
 export async function validateProjects(options: {
   root: string;
@@ -169,7 +184,19 @@ export async function validateProjects(options: {
     };
   }
 
-  for (const directory of directories) {
+  const selectedNames = new Set(directories.map((directory) => directory.name));
+  for (const directory of discoveredDirectories) {
+    if (!selectedNames.has(directory.name)) {
+      const snapshot = await readMetadataSnapshot(directory.path);
+      if (snapshot.declaredSlug !== undefined) {
+        declarations.set(snapshot.declaredSlug, [
+          ...(declarations.get(snapshot.declaredSlug) ?? []),
+          directory.name,
+        ]);
+      }
+      continue;
+    }
+
     const validation = await validateProjectAt({
       projectPath: directory.path,
       expectedDirectoryName: directory.name,
@@ -177,7 +204,7 @@ export async function validateProjects(options: {
     if (validation.ok) projects.push(validation.project);
     else errors.push(...validation.errors);
 
-    const declaredSlug = await readDeclaredSlug(directory.path);
+    const declaredSlug = declarationByResult.get(validation);
     if (declaredSlug !== undefined) {
       declarations.set(declaredSlug, [
         ...(declarations.get(declaredSlug) ?? []),
@@ -188,7 +215,7 @@ export async function validateProjects(options: {
 
   for (const [slug, projectNames] of declarations) {
     if (projectNames.length < 2) continue;
-    for (const project of projectNames) {
+    for (const project of projectNames.filter((name) => selectedNames.has(name))) {
       errors.push(error(
         project,
         'slug',
