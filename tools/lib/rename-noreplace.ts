@@ -19,13 +19,28 @@ export type NativeRenameAdapterOptions = {
 };
 
 const bundledSource = join(dirname(fileURLToPath(import.meta.url)), '..', 'native', 'rename-noreplace.c');
+const maximumDiagnosticLength = 1_000;
+export const maximumCollectedStderrLength = 4_096;
+
+export const appendBoundedStderr = (collected: string, chunk: string): string => {
+  if (collected.length >= maximumCollectedStderrLength) return collected;
+  return collected + chunk.slice(0, maximumCollectedStderrLength - collected.length);
+};
+
+const sanitizeDiagnostic = (value: string): string => value
+  .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '')
+  .replace(/[\u0000-\u001F\u007F-\u009F]/gu, ' ')
+  .replace(/\s+/gu, ' ')
+  .trim()
+  .slice(0, maximumDiagnosticLength);
 
 const spawnCommand: NativeCommandRunner = (command, args) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, { shell: false, stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+    // Keep draining the pipe after the cap so the child cannot block on a full stderr buffer.
+    child.stderr.on('data', (chunk: string) => { stderr = appendBoundedStderr(stderr, chunk); });
     child.on('error', reject);
     child.on('close', (code) => resolve({ code: code ?? 1, stderr }));
   });
@@ -85,7 +100,8 @@ export function createAtomicRenameNoReplaceAdapter(options: NativeRenameAdapterO
         throw new Error(`Atomic publication helper compiler is unavailable at ${compiler}; install a C compiler`, { cause: error });
       }
       if (result.code !== 0) {
-        throw new Error(`Atomic publication helper could not be compiled with ${compiler}; install a C compiler. ${result.stderr.trim()}`);
+        const diagnostic = sanitizeDiagnostic(result.stderr);
+        throw new Error(`Atomic publication helper could not be compiled with ${compiler}; install a C compiler.${diagnostic ? ` ${diagnostic}` : ''}`);
       }
       await chmod(candidate, 0o700);
       try { await link(candidate, executable); } catch (error) {
@@ -110,8 +126,9 @@ export function createAtomicRenameNoReplaceAdapter(options: NativeRenameAdapterO
       error.code = 'EEXIST';
       throw error;
     }
+    if (result.code === 2) throw new Error('Atomic publication helper was invoked with invalid arguments; report this tooling bug');
     if (result.code === 4) throw new Error(`This ${platform} kernel does not support atomic no-replace rename`);
-    throw new Error(`Atomic project publication failed: ${result.stderr.trim() || `helper exited ${result.code}`}`);
+    throw new Error(`Atomic project publication failed: ${sanitizeDiagnostic(result.stderr) || `helper exited ${result.code}`}`);
   };
 }
 

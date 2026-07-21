@@ -14,7 +14,12 @@ vi.mock('../validate-projects.js', async () => {
 import { createProject, deriveSlug, renameNoReplace, runInteractiveCreator } from '../create-project.js';
 import { validateProjects } from '../validate-projects.js';
 import { copyRenderedTemplate } from '../lib/templates.js';
-import { createAtomicRenameNoReplaceAdapter, type NativeCommandRunner } from '../lib/rename-noreplace.js';
+import {
+  appendBoundedStderr,
+  createAtomicRenameNoReplaceAdapter,
+  maximumCollectedStderrLength,
+  type NativeCommandRunner,
+} from '../lib/rename-noreplace.js';
 import { cleanupRepositories, makeRepository } from './fixtures.js';
 
 afterEach(async () => {
@@ -44,6 +49,13 @@ const fakeNativeRunner = (nativeResult = { code: 0, stderr: '' }) => {
   };
   return { run, compiles: () => compiles };
 };
+
+it('bounds stderr while collecting multiple chunks', () => {
+  const collected = ['first', 'x'.repeat(3_000), 'y'.repeat(3_000), 'ignored']
+    .reduce(appendBoundedStderr, '');
+  expect(collected).toHaveLength(maximumCollectedStderrLength);
+  expect(appendBoundedStderr(collected, 'z'.repeat(10_000))).toBe(collected);
+});
 
 it('compiles the native adapter once and reuses its validated cache', async () => {
   const root = await makeRepository();
@@ -99,6 +111,19 @@ it('reports missing and failing compilers actionably', async () => {
   }
 });
 
+it('sanitizes and bounds hostile compiler diagnostics', async () => {
+  const root = await makeRepository();
+  const sourcePath = join(root, 'helper.c');
+  await writeFile(sourcePath, 'source');
+  const hostile = `\u001b[31mFAIL\u001b[0m\u0000\n${'x'.repeat(5_000)}`;
+  const rename = createAtomicRenameNoReplaceAdapter({
+    platform: 'linux', sourcePath, cacheRoot: join(root, 'cache'), compilerPath: '/test/cc',
+    run: async () => ({ code: 2, stderr: hostile }),
+  });
+  await expect(rename('a', 'b')).rejects.toSatisfy((error: Error) =>
+    !error.message.includes('\u001b') && !error.message.includes('\u0000') && error.message.length < 1_200 && error.message.includes('FAIL'));
+});
+
 it('rejects unsupported platforms and untrusted cache mode or ownership', async () => {
   const unsupportedRoot = await makeRepository();
   const unsupportedSource = join(unsupportedRoot, 'helper.c');
@@ -122,6 +147,7 @@ it('rejects unsupported platforms and untrusted cache mode or ownership', async 
 });
 
 it.each([
+  [2, /invoked with invalid arguments/i, undefined],
   [3, /already exists/i, 'EEXIST'],
   [4, /kernel does not support/i, undefined],
   [9, /helper exited 9/i, undefined],
@@ -138,6 +164,16 @@ it.each([
     expect((error as Error).message).toMatch(message);
     expect((error as NodeJS.ErrnoException).code).toBe(errorCode);
   }
+});
+
+it('sanitizes and bounds hostile native-helper diagnostics', async () => {
+  const root = await makeRepository();
+  const sourcePath = join(root, 'helper.c');
+  await writeFile(sourcePath, 'source');
+  const fake = fakeNativeRunner({ code: 9, stderr: `\u001b[2Jbad\u0007\n${'z'.repeat(5_000)}` });
+  const rename = createAtomicRenameNoReplaceAdapter({ platform: 'darwin', sourcePath, cacheRoot: join(root, 'cache'), compilerPath: '/test/cc', run: fake.run });
+  await expect(rename('a', 'b')).rejects.toSatisfy((error: Error) =>
+    !error.message.includes('\u001b') && !error.message.includes('\u0007') && error.message.length < 1_100 && error.message.includes('bad'));
 });
 
 it('runs a real freshly compiled native no-replace helper on this host', async () => {
