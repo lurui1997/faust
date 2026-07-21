@@ -1,0 +1,14 @@
+{
+  "title": "Personal AI Work System",
+  "slug": "personal-ai-work-system",
+  "summary": "Local-first work review prototype that turns repository activity into evidence-backed daily summaries and automation opportunities.",
+  "status": "building",
+  "type": "ai",
+  "tags": ["local-first", "agents", "automation", "git"],
+  "createdAt": "2026-07-21",
+  "updatedAt": "2026-07-21",
+  "featured": true,
+  "demo": null,
+  "repository": "./",
+  "cover": null
+}
