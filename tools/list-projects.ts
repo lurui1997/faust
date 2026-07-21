@@ -1,6 +1,8 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import stringWidth from 'string-width';
+
 import {
   buildProjectIndex,
   ProjectValidationError,
@@ -10,32 +12,17 @@ import {
 const EMPTY_MESSAGE = 'No projects found. Run pnpm create:project.';
 const HEADERS = ['TITLE', 'TYPE', 'STATUS', 'PATH'] as const;
 
-const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-const isWideCodePoint = (codePoint: number, character: string): boolean =>
-  /\p{Extended_Pictographic}/u.test(character)
-  || (codePoint >= 0x1100 && codePoint <= 0x115f)
-  || codePoint === 0x2329
-  || codePoint === 0x232a
-  || (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f)
-  || (codePoint >= 0xac00 && codePoint <= 0xd7a3)
-  || (codePoint >= 0xf900 && codePoint <= 0xfaff)
-  || (codePoint >= 0xfe10 && codePoint <= 0xfe19)
-  || (codePoint >= 0xfe30 && codePoint <= 0xfe6f)
-  || (codePoint >= 0xff00 && codePoint <= 0xff60)
-  || (codePoint >= 0xffe0 && codePoint <= 0xffe6)
-  || (codePoint >= 0x1f1e6 && codePoint <= 0x1f1ff)
-  || (codePoint >= 0x1f200 && codePoint <= 0x1f251)
-  || (codePoint >= 0x20000 && codePoint <= 0x3fffd);
-const width = (value: string): number => [...graphemes.segment(value)]
-  .reduce((total, { segment }) => {
-    const characters = Array.from(segment);
-    if (characters.some((character) => isWideCodePoint(character.codePointAt(0) ?? 0, character))) {
-      return total + 2;
-    }
-    return total + characters.filter((character) => !/[\p{Mark}\p{Control}]/u.test(character)).length;
-  }, 0);
+const escapeTerminalText = (value: string): string => value.replace(
+  /[\p{Control}\p{Format}]/gu,
+  (character) => {
+    if (character === '\n') return '\\n';
+    if (character === '\r') return '\\r';
+    if (character === '\t') return '\\t';
+    return `\\u{${character.codePointAt(0)?.toString(16).toUpperCase()}}`;
+  },
+);
 const pad = (value: string, target: number): string =>
-  `${value}${' '.repeat(Math.max(0, target - width(value)))}`;
+  `${value}${' '.repeat(Math.max(0, target - stringWidth(value)))}`;
 
 export function formatProjectList(projects: readonly GalleryProject[]): string {
   if (projects.length === 0) return EMPTY_MESSAGE;
@@ -50,9 +37,9 @@ export function formatProjectList(projects: readonly GalleryProject[]): string {
     project.type,
     project.status,
     `projects/${project.slug}`,
-  ]);
+  ].map(escapeTerminalText));
   const widths = HEADERS.map((header, column) =>
-    Math.max(width(header), ...rows.map((row) => width(row[column]))));
+    Math.max(stringWidth(header), ...rows.map((row) => stringWidth(row[column]))));
   const render = (row: readonly string[]): string => row
     .map((cell, column) => column === row.length - 1 ? cell : pad(cell, widths[column]))
     .join('  ');
@@ -66,17 +53,19 @@ export async function runListProjectsCli(options: {
   writeError?: (line: string) => void;
 }): Promise<0 | 1> {
   const write = options.write ?? ((line: string) => console.log(line));
-  const writeError = options.writeError ?? write;
+  const writeError = options.writeError ?? ((line: string) => console.error(line));
   try {
     const projects = await buildProjectIndex(options.root);
     write(formatProjectList(projects));
     return 0;
   } catch (caught) {
     if (caught instanceof ProjectValidationError) {
-      writeError(caught.message);
+      writeError(escapeTerminalText(caught.message));
     } else {
       const message = caught instanceof Error ? caught.message : String(caught);
-      writeError(`repository: projects — listing could not run: ${message}; fix: ensure projects/ exists and is readable`);
+      writeError(escapeTerminalText(
+        `repository: projects — listing could not run: ${message}; fix: ensure projects/ exists and is readable`,
+      ));
     }
     return 1;
   }
