@@ -37,6 +37,8 @@
 - Create `tools/project-links.ts` for base-aware gallery, source, demo, and cover URLs.
 - Create `tools/list-projects.ts` for the maintenance table command.
 - Create `tools/create-project.ts` for prompt orchestration, safe staging, template rendering, validation, and atomic rename.
+- Create `tools/lib/rename-noreplace.ts` for compiling and invoking the platform no-replace rename helper.
+- Create `tools/native/rename-noreplace.c` for audited Linux/macOS atomic directory publication.
 - Create `tools/lib/files.ts` for project discovery, safe paths, and atomic directory helpers.
 - Create `tools/lib/readme.ts` for safe first-paragraph extraction.
 - Create `tools/lib/templates.ts` for explicit placeholder replacement.
@@ -626,6 +628,8 @@ git commit -m "feat: generate deterministic gallery project data"
 - Create: `templates/script/package.json.tpl`
 - Create: `templates/script/src/index.mjs.tpl`
 - Create: `tools/lib/templates.ts`
+- Create: `tools/lib/rename-noreplace.ts`
+- Create: `tools/native/rename-noreplace.c`
 - Create: `tools/create-project.ts`
 - Create: `tools/__tests__/create-project.test.ts`
 
@@ -649,7 +653,7 @@ it('leaves no project or staging directory when validation fails', async () => {
 ```
 
 Add cases for slug derivation (`Crème & Search` -> `creme-search`), explicit invalid slug, existing-directory conflict, and template traversal/unknown placeholders.
-Add a creator integration case where the random staging basename differs from the intended slug and spy on the Task 4 API to verify `createProject` calls `validateProjectAt({ projectPath: <actual staging path>, expectedDirectoryName: 'my-idea' })`. Add a race test that creates the final destination immediately before publication and asserts the creator fails without overwriting it.
+Add a creator integration case where the random staging basename differs from the intended slug and spy on the Task 4 API to verify `createProject` calls `validateProjectAt({ projectPath: <actual staging path>, expectedDirectoryName: 'my-idea' })`. Add a deterministic race test that creates the final destination immediately before the no-replace syscall and asserts the creator fails without overwriting it. Add a concurrent full-creator test that asserts exactly one final project is published.
 
 - [ ] **Step 2: Run the creator suite and verify red**
 
@@ -689,11 +693,13 @@ export type CreateProjectInput = {
 export async function createProject(input: CreateProjectInput): Promise<{ path: string; metadata: ProjectMetadata }>;
 ```
 
-Import the already committed `validateProjectAt` from `tools/validate-projects.ts`; Task 6 must not alter `tools/validate-projects.ts`, `tools/lib/files.ts`, or their Task 4 tests. Copy only regular files beneath the selected template, reject symlinks and destination traversal, replace only known `{{UPPER_SNAKE_CASE}}` placeholders, and fail if any placeholder remains. Create a sibling staging directory using `mkdtemp(join(projectsDir, `.${slug}.stage-`))`, write `project.json`, then call `validateProjectAt({ projectPath: staging, expectedDirectoryName: slug })`; slug-directory validation therefore uses the intended final basename, while cover/README checks use the physical staging path. Implement and test one `renameNoReplace(staging, final)` helper as the publication boundary: acquire `projects/.create-<slug>.lock` with exclusive `open(..., 'wx')`, reject if `final` exists, perform the same-filesystem directory `rename`, and release only this invocation's lock in `finally`. All creator calls must honor the lock, so publication is a single atomic rename and concurrent creators cannot reach an overwriting rename; `EEXIST` from either lock or destination is a conflict. Do not use copy-then-delete and do not remove/recreate the destination. In the race test, pause the first creator after locking, start a second creator, and assert exactly one final directory is published and its contents are never replaced. In `finally`, remove only the resolved staging directory and owned lock; never delete or replace an existing destination.
+Import the already committed `validateProjectAt` from `tools/validate-projects.ts`; Task 6 must not alter `tools/validate-projects.ts`, `tools/lib/files.ts`, or their Task 4 tests. Copy only regular files beneath the selected trusted, immutable template root, reject directory symlinks and destination traversal, read files through no-follow descriptors, replace only known `{{UPPER_SNAKE_CASE}}` placeholders with context-safe values, and fail if any placeholder remains. Create a sibling staging directory using `mkdtemp(join(projectsDir, `.${slug}.stage-`))`, write `project.json`, then call `validateProjectAt({ projectPath: staging, expectedDirectoryName: slug })`; slug-directory validation therefore uses the intended final basename, while cover/README checks use the physical staging path.
+
+Implement and test `renameNoReplace(staging, final)` as the publication boundary using a small audited native helper committed as C source. On Linux it calls `renameat2(..., RENAME_NOREPLACE)`; on macOS it calls `renamex_np(..., RENAME_EXCL)`. Compile the helper on demand with `/usr/bin/cc` into a private temporary cache keyed by source, platform, and architecture; invoke compiler and helper with argument arrays and no shell. Map an existing destination to a stable conflict, fail actionably for unsupported platforms or missing compiler, and never commit the binary. No persistent creator lock is used, so a killed process cannot leave a stale lock; the kernel no-replace primitive serializes competing publishers. Do not use check-then-rename, copy-then-delete, or remove/recreate the destination. In `finally`, remove only the resolved staging directory; never delete or replace an existing destination.
 
 - [ ] **Step 5: Add the interactive adapter without coupling prompts to core logic**
 
-The `isMain` path prompts for title, type, template, summary, then derived slug confirmation/edit. If the slug conflicts, re-prompt; on success print the created path and exact next command. Keep `createProject()` prompt-free for tests.
+The `isMain` path prompts for title, type, template, summary, then derived slug confirmation/edit. If the slug conflicts, re-prompt; on success print the created path and a template-specific exact next command. Keep `createProject()` prompt-free for tests and inject prompt/output adapters for deterministic coverage.
 
 - [ ] **Step 6: Run creator and validation suites**
 

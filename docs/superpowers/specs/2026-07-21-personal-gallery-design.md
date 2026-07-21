@@ -96,6 +96,8 @@ Running `pnpm create:project` starts an interactive prompt for title, type, temp
 
 The command must leave no partially created project when validation fails. Template files use explicit placeholders rather than executing arbitrary code during creation.
 
+Publishing the validated staging directory must never replace an existing project, including one created between a preflight check and publication. Because Node.js does not expose directory-level no-replace rename semantics, the creator uses a small audited native helper: `renameat2(RENAME_NOREPLACE)` on Linux and `renamex_np(RENAME_EXCL)` on macOS. The helper is compiled on first use into a private temporary cache and invoked without a shell. Project creation therefore supports Linux and macOS and requires `/usr/bin/cc` (a C compiler toolchain) for the first helper build; unsupported platforms or a missing compiler fail with an actionable message. No native binary is committed. Templates remain non-executable and project code is never run during scaffolding.
+
 The `blank` template supports every unmodelled technology stack. The initial release will not provide dedicated Java, Python service, CLI, or AI templates; those can be added after repeated project patterns justify them.
 
 ## 6. Gallery Experience
