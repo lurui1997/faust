@@ -101,11 +101,13 @@ export async function demoApi(path, options = {}, token) {
 
   if (path === '/cart' && method === 'POST') {
     if (!db.carts[user.id]) db.carts[user.id] = [];
-    const p = PRODUCTS.find((x) => x.id === body.productId);
-    if (!p || p.stock < body.quantity) throw new Error('库存不足');
-    const existing = db.carts[user.id].find((c) => c.product_id === body.productId);
-    if (existing) existing.quantity += body.quantity;
-    else db.carts[user.id].push({ id: db.nextCartId++, product_id: body.productId, quantity: body.quantity || 1 });
+    const productId = Number(body.productId);
+    const quantity = Number(body.quantity) || 1;
+    const p = PRODUCTS.find((x) => x.id === productId);
+    if (!p || p.stock < quantity) throw new Error('库存不足');
+    const existing = db.carts[user.id].find((c) => c.product_id === productId);
+    if (existing) existing.quantity += quantity;
+    else db.carts[user.id].push({ id: db.nextCartId++, product_id: productId, quantity });
     return { message: '已加入购物车' };
   }
 

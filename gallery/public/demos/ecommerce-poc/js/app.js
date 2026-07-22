@@ -51,12 +51,25 @@ function updateAuthUI() {
 }
 
 async function init() {
-  if (state.token) {
-    try { state.user = await api('/auth/me'); } catch { state.token = null; localStorage.removeItem('demo-token'); }
-  }
+  await loginDemoUser();
   updateAuthUI();
   bindEvents();
   showPage('shop');
+}
+
+async function loginDemoUser() {
+  try {
+    const data = await api('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+    });
+    state.token = data.token;
+    state.user = data.user;
+    localStorage.setItem('demo-token', data.token);
+    await loadCart();
+  } catch (err) {
+    console.error('Demo login failed:', err);
+  }
 }
 
 function bindEvents() {
@@ -114,9 +127,12 @@ async function handleAuth(e) {
 }
 
 function logout() {
-  state.user = null; state.token = null;
+  state.user = null;
+  state.token = null;
   localStorage.removeItem('demo-token');
-  updateAuthUI(); showPage('shop'); toast('已退出');
+  updateAuthUI();
+  showPage('shop');
+  loginDemoUser().then(() => { updateAuthUI(); toast('已重新登录演示账号'); });
 }
 
 async function loadProducts() {
@@ -155,8 +171,13 @@ function renderProducts() {
 
 async function addToCart(productId) {
   if (!state.user) return openAuthModal();
-  await api('/cart', { method: 'POST', body: JSON.stringify({ productId, quantity: 1 }) });
-  toast('已加入购物车'); loadCart();
+  try {
+    await api('/cart', { method: 'POST', body: JSON.stringify({ productId: Number(productId), quantity: 1 }) });
+    toast('已加入购物车');
+    loadCart();
+  } catch (err) {
+    toast(err.message || '加入购物车失败');
+  }
 }
 
 async function loadCart() {
