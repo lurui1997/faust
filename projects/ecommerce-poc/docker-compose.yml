@@ -1,0 +1,34 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ecommerce-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: ecommerce
+      MYSQL_USER: ecommerce
+      MYSQL_PASSWORD: ecommerce123
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot123"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rocketmq:
+    image: apache/rocketmq:4.9.7
+    container_name: ecommerce-rocketmq
+    ports:
+      - "19876:9876"
+      - "19011:10911"
+    volumes:
+      - ./infra/rocketmq-4-start.sh:/rocketmq-start.sh:ro
+      - ./infra/broker.conf:/home/rocketmq/rocketmq-4.9.7/conf/broker.conf:ro
+    command: sh /rocketmq-start.sh
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

@@ -1,0 +1,14 @@
+{
+  "title": "E-Commerce POC",
+  "slug": "ecommerce-poc",
+  "summary": "Web-based e-commerce demo with real MySQL and RocketMQ for async order processing.",
+  "status": "shipped",
+  "type": "web",
+  "tags": ["ecommerce", "mysql", "rocketmq", "poc"],
+  "createdAt": "2026-07-22",
+  "updatedAt": "2026-07-22",
+  "featured": true,
+  "demo": "https://lurui1997.github.io/faust/demos/ecommerce-poc/",
+  "repository": "./",
+  "cover": null
+}

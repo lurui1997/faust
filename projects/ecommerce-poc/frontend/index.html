@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faust Shop — 电商 POC 演示</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="container header-inner">
+      <a href="#" class="logo" data-page="shop">Faust Shop</a>
+      <nav class="nav">
+        <button class="nav-btn" data-page="shop">商品</button>
+        <button class="nav-btn" data-page="cart">购物车 <span id="cart-badge" class="badge hidden">0</span></button>
+        <button class="nav-btn" data-page="orders">我的订单</button>
+        <button class="nav-btn admin-only hidden" data-page="admin">管理</button>
+      </nav>
+      <div class="auth-area" id="auth-area"></div>
+    </div>
+  </header>
+
+  <main class="main container">
+    <!-- Shop -->
+    <section id="page-shop" class="page active">
+      <div class="shop-header">
+        <h1>精选好物</h1>
+        <div class="filters">
+          <input type="search" id="search-input" placeholder="搜索商品..." class="search-input">
+          <select id="category-filter" class="category-select">
+            <option value="">全部分类</option>
+          </select>
+        </div>
+      </div>
+      <div id="product-grid" class="product-grid"></div>
+    </section>
+
+    <!-- Cart -->
+    <section id="page-cart" class="page">
+      <h1>购物车</h1>
+      <div id="cart-content"></div>
+    </section>
+
+    <!-- Orders -->
+    <section id="page-orders" class="page">
+      <h1>我的订单</h1>
+      <div id="orders-list"></div>
+    </section>
+
+    <!-- Admin -->
+    <section id="page-admin" class="page">
+      <h1>管理后台</h1>
+      <div class="admin-tabs">
+        <button class="tab-btn active" data-tab="admin-orders">全部订单</button>
+        <button class="tab-btn" data-tab="admin-products">商品管理</button>
+      </div>
+      <div id="admin-orders" class="tab-panel active"></div>
+      <div id="admin-products" class="tab-panel"></div>
+    </section>
+  </main>
+
+  <!-- Auth Modal -->
+  <dialog id="auth-modal" class="modal">
+    <form id="auth-form" class="auth-form">
+      <h2 id="auth-title">登录</h2>
+      <div id="email-field" class="field hidden">
+        <label>邮箱</label>
+        <input type="email" name="email" placeholder="your@email.com">
+      </div>
+      <div class="field">
+        <label>用户名</label>
+        <input type="text" name="username" required placeholder="用户名">
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" name="password" required placeholder="至少 6 位" minlength="6">
+      </div>
+      <p id="auth-error" class="error hidden"></p>
+      <button type="submit" class="btn btn-primary btn-block">确认</button>
+      <p class="auth-switch">
+        <a href="#" id="auth-toggle">没有账号？注册</a>
+      </p>
+      <p class="demo-hint">演示账号: admin / admin123</p>
+    </form>
+  </dialog>
+
+  <!-- Checkout Modal -->
+  <dialog id="checkout-modal" class="modal">
+    <form id="checkout-form" class="checkout-form">
+      <h2>确认下单</h2>
+      <div class="checkout-summary" id="checkout-summary"></div>
+      <div class="field">
+        <label>收货地址</label>
+        <textarea name="shippingAddress" required rows="2" placeholder="省市区 + 详细地址"></textarea>
+      </div>
+      <p id="checkout-error" class="error hidden"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="checkout-cancel">取消</button>
+        <button type="submit" class="btn btn-primary">提交订单</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/js/app.js" type="module"></script>
+</body>
+</html>

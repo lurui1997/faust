@@ -1,0 +1,23 @@
+{
+  "name": "ecommerce-poc",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f",
+    "dev": "node --watch backend/src/index.js",
+    "worker": "node --watch worker/src/orderWorker.js",
+    "start": "node backend/src/index.js",
+    "start:worker": "node worker/src/orderWorker.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.14.1"
+  }
+}
